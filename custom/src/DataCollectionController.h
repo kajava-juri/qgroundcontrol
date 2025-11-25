@@ -13,9 +13,12 @@ class DataCollectionController : public QObject
 public:
     explicit DataCollectionController(QObject* parent = nullptr);
     bool isCollecting() const {return _isCollecting;}
+
+    Q_INVOKABLE void toggleRecording();
     
 signals:
     void isCollectingChanged();
+    void imuDataChanged();
 
 private:
     bool _isCollecting{false};

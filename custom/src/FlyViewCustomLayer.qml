@@ -10,6 +10,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtCharts
 
 import QGroundControl
 import QGroundControl.Controls
@@ -87,10 +88,10 @@ Item {
                 color: "white"
             }
             
-            // MouseArea {
-            //     anchors.fill: parent
-            //     onClicked: dataController.toggleRecording()
-            // }
+            MouseArea {
+                anchors.fill: parent
+                onClicked: dataController.toggleRecording()
+            }
         }
         
         Text {
@@ -99,6 +100,52 @@ Item {
             color: "white"
             visible: dataController.isCollecting
         }
+    }
+
+    Rectangle {
+        width: 300
+        height: 300
+        color: qgcPal.window
+
+        ValueAxis {
+            id: axisX
+            min: 0
+            max: 100
+        }
+
+        ValueAxis {
+            id: axisY
+            min: -20
+            max: 20
+        }
+
+        LineSeries {
+            name: "Accel X"
+            axisX: axisX
+            axisY: axisY
+            color: "#e03131"
+        }
+        
+        LineSeries {
+            name: "Accel Y"
+            axisX: axisX
+            axisY: axisY
+            color: "#12b886"
+        }
+
+        LineSeries {
+            name: "Accel Z"
+            axisX: axisX
+            axisY: axisY
+            color: "#228be6"
+        }
+
+        Connections {
+        target: dataController
+        function onImuDataReceived(x, y, z) {
+            // Update series
+        }
+    }
     }
 
     // This is an example of how you can use parent tool insets to position an element on the custom fly view layer

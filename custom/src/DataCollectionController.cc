@@ -9,3 +9,15 @@ DataCollectionController::DataCollectionController(QObject* parent)
 {
     qCDebug(DataCollectionControllerLog) << "DataCollectionController created";
 }
+
+void DataCollectionController::toggleRecording() {
+    if(_isCollecting) {
+        qCDebug(DataCollectionControllerLog) << "Stopping data collection";
+        _isCollecting = false;
+        emit isCollectingChanged();
+    } else {
+        qCDebug(DataCollectionControllerLog) << "Starting data collection";
+        _isCollecting = true;
+        emit isCollectingChanged();
+    }
+}
