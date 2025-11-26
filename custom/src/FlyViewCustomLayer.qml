@@ -104,7 +104,7 @@ Item {
 
     Rectangle {
         width: 300
-        height: 300
+        height: 240
         color: qgcPal.window
 
         ValueAxis {
@@ -141,11 +141,35 @@ Item {
         }
 
         Connections {
-        target: dataController
-        function onImuDataReceived(x, y, z) {
-            // Update series
+            target: dataController
+            function onImuDataReceived(x, y, z) {
+                // Update series
+            }
         }
     }
+
+    Rectangle {
+        width: 300
+        height: 240
+        color: "black"
+        anchors.left: parent.left
+        anchors.top: parent.top
+        anchors.topMargin: 248
+
+        Image {
+            anchors.fill: parent
+            fillMode: Image.PreserveAspectFit
+        }
+
+        Rectangle {
+            width: 10
+            height: 10
+            radius: 5
+            //color: thermalReceiver.connected ? "#12b886" : "#e03131"
+            anchors.top: parent.top
+            anchors.right: parent.right
+            anchors.margins: 5
+        }
     }
 
     // This is an example of how you can use parent tool insets to position an element on the custom fly view layer

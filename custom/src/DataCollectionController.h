@@ -11,15 +11,20 @@ class DataCollectionController : public QObject
     Q_PROPERTY(bool isCollecting READ isCollecting NOTIFY isCollectingChanged)
 
 public:
-    explicit DataCollectionController(QObject* parent = nullptr);
+    DataCollectionController(QObject* parent = nullptr);
     bool isCollecting() const {return _isCollecting;}
 
     Q_INVOKABLE void toggleRecording();
+    Q_INVOKABLE void startRecording();
+    Q_INVOKABLE void stopRecording();
     
 signals:
     void isCollectingChanged();
-    void imuDataChanged();
+    void imuDataReceived();
 
 private:
     bool _isCollecting{false};
+
+    void sendHttpRequest(QString endpoint);
+    QNetworkAccessManager _networkManager;
 };
