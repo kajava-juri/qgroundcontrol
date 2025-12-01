@@ -1,0 +1,21 @@
+{
+    "version":      1,
+    "fileType":  "FactMetaData",
+    "QGC.MetaData.Facts":
+    [
+        {
+            "name":      "httpUrl",
+            "shortDesc": "Data collection HTTP Url",
+            "longDesc":  "HTTP url address and port to communicate with the data collection script. Example: 0.0.0.0:5000",
+            "type":             "string",
+            "default":     "0.0.0.0:5000"
+        },
+        {
+            "name":      "webSocketUrl",
+            "shortDesc": "Data collection WebSocket Url",
+            "longDesc":  "WebSocket url address and port to communicate with the data collection script. Example: ws://0.0.0.0:5001",
+            "type":             "string",
+            "default":     "ws://0.0.0.0:5001"
+        }
+    ]
+}

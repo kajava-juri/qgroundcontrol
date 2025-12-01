@@ -95,11 +95,17 @@ Item {
         }
         
         Text {
-            anchors.verticalCenter: parent.verticalCenter
-            text: dataController.recordingTime
+            text: "Test Value: " + dataController.testValue
             color: "white"
-            visible: dataController.isCollecting
+            font.pixelSize: 24
         }
+
+        // Text {
+        //     anchors.verticalCenter: parent.verticalCenter
+        //     text: dataController.recordingTime
+        //     color: "white"
+        //     visible: dataController.isCollecting
+        // }
     }
 
     Rectangle {
@@ -142,8 +148,9 @@ Item {
 
         Connections {
             target: dataController
-            function onImuDataReceived(x, y, z) {
+            function onImuDataChanged(x, y, z) {
                 // Update series
+
             }
         }
     }

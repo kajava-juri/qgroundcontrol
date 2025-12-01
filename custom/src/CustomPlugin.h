@@ -12,6 +12,7 @@
 #include <QtCore/QTranslator>
 #include <QtQml/QQmlAbstractUrlInterceptor>
 
+#include "CustomSettings.h"
 #include "QGCCorePlugin.h"
 #include "QGCOptions.h"
 
@@ -19,6 +20,7 @@ class CustomOptions;
 class CustomPlugin;
 class CustomSettings;
 class QQmlApplicationEngine;
+class QGCToolbox;
 
 Q_DECLARE_LOGGING_CATEGORY(CustomLog)
 
@@ -63,6 +65,8 @@ private:
 class CustomPlugin : public QGCCorePlugin
 {
     Q_OBJECT
+    Q_PROPERTY(CustomSettings* customSettings READ customSettings CONSTANT)
+    Q_PROPERTY(QVariantList customSettingsPages READ customSettingsPages CONSTANT)
 
 public:
     explicit CustomPlugin(QObject *parent = nullptr);
@@ -83,16 +87,21 @@ public:
     /// We override this so we can get access to QQmlApplicationEngine and use it to register our qml module
     QQmlApplicationEngine *createQmlApplicationEngine(QObject *parent) final;
 
+    CustomSettings *customSettings() const { return _customSettings; }
+    QVariantList customSettingsPages() const { return _customSettingsList; }
+
 private slots:
     void _advancedChanged(bool advanced);
 
+    
 private:
     void _addSettingsEntry(const QString& title, const char* qmlFile, const char* iconFile = nullptr);
-
+    
     CustomOptions *_options = nullptr;
     QQmlApplicationEngine *_qmlEngine = nullptr;
     class CustomOverrideInterceptor *_selector = nullptr;
     QVariantList _customSettingsList; // Not to be mixed up with QGCCorePlugin implementation
+    CustomSettings *_customSettings = nullptr;
 };
 
 /*===========================================================================*/

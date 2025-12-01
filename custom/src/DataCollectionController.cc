@@ -1,6 +1,8 @@
 #include "DataCollectionController.h"
 #include "QGCApplication.h"
 #include "QGCLoggingCategory.h"
+#include "Vehicle.h"
+#include "MultiVehicleManager.h"
 #include <QtNetwork/QNetworkReply>
 #include <QtNetwork/QNetworkAccessManager>
 #include <QtCore/QJsonDocument>
@@ -12,6 +14,12 @@ DataCollectionController::DataCollectionController(QObject* parent)
     : QObject(parent)
 {
     qCDebug(DataCollectionControllerLog) << "DataCollectionController created";
+    
+    // Connect to active vehicle changes
+    connect(MultiVehicleManager::instance(), &MultiVehicleManager::activeVehicleChanged, this, &DataCollectionController::_onActiveVehicleChanged);
+    
+    // Set initial vehicle if already connected
+    _onActiveVehicleChanged(MultiVehicleManager::instance()->activeVehicle());
 }
 
 void DataCollectionController::toggleRecording() {
@@ -28,7 +36,7 @@ void DataCollectionController::toggleRecording() {
     }
 }
 
-void DataCollectionController::sendHttpRequest(QString endpoint) {
+void DataCollectionController::_sendHttpRequest(QString endpoint) {
     qCDebug(DataCollectionControllerLog) << "Sending HTTP request to endpoint:" << endpoint;
     
     QNetworkRequest request(QUrl(QString("http://127.0.0.1:5000/" + endpoint)));
@@ -64,7 +72,7 @@ void DataCollectionController::startRecording() {
     qCDebug(DataCollectionControllerLog) << "Start recording invoked";
     if(!_isCollecting) {
         _isCollecting = true;
-        sendHttpRequest("start");
+        _sendHttpRequest("start");
         emit isCollectingChanged();
     }
 }
@@ -73,7 +81,46 @@ void DataCollectionController::stopRecording() {
     qCDebug(DataCollectionControllerLog) << "Stop recording invoked";
     if (_isCollecting) {
         _isCollecting = false;
-        sendHttpRequest("stop");
+        _sendHttpRequest("stop");
         emit isCollectingChanged();
+    }
+}
+
+void DataCollectionController::_onActiveVehicleChanged(Vehicle* vehicle)
+{
+    if (_vehicle) {
+        disconnect(_vehicle, nullptr, this, nullptr);
+    }
+    
+    _vehicle = vehicle;
+    
+    if (_vehicle) {
+        qCDebug(DataCollectionControllerLog) << "Connected to vehicle" << _vehicle->id();
+        
+        // Listen to ALL MAVLink messages for debugging
+        connect(_vehicle, &Vehicle::mavlinkMessageReceived, this, [this](const mavlink_message_t& message) {
+            // Log every message type we receive
+            static int msgCount = 0;
+            if (msgCount++ < 10) {  // Only log first 10 to avoid spam
+                qCDebug(DataCollectionControllerLog) << "Received MAVLink message ID:" << message.msgid;
+            }
+            
+            if (message.msgid == MAVLINK_MSG_ID_NAMED_VALUE_FLOAT) {
+                mavlink_named_value_float_t namedValue;
+                mavlink_msg_named_value_float_decode(&message, &namedValue);
+                
+                QString name = QString::fromLatin1(namedValue.name, strnlen(namedValue.name, sizeof(namedValue.name)));
+                
+                qCDebug(DataCollectionControllerLog) << "NAMED_VALUE_FLOAT received:" << name << "=" << namedValue.value;
+                
+                if (name == "test_count") {
+                    _testValue = namedValue.value;
+                    emit testValueChanged();
+                    qCDebug(DataCollectionControllerLog) << "Updated test_count:" << _testValue;
+                }
+            }
+        });
+    } else {
+        qCDebug(DataCollectionControllerLog) << "No active vehicle";
     }
 }

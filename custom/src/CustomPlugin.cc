@@ -52,7 +52,9 @@ CustomPlugin::CustomPlugin(QObject *parent)
 
 QGCCorePlugin *CustomPlugin::instance()
 {
-    return _customPluginInstance();
+    auto* plugin = _customPluginInstance();
+    Q_CHECK_PTR(plugin);
+    return plugin;
 }
 
 void CustomPlugin::cleanup()
@@ -283,6 +285,12 @@ QQmlApplicationEngine* CustomPlugin::createQmlApplicationEngine(QObject* parent)
     _qmlEngine = QGCCorePlugin::createQmlApplicationEngine(parent);
     _qmlEngine->addImportPath("qrc:/qml/Custom/Widgets");
     // TODO: Investigate _qmlEngine->setExtraSelectors({"custom"})
+    
+    // Initialize custom settings after QGCCorePlugin is fully ready
+    if (!_customSettings) {
+        _customSettings = new CustomSettings(this);
+        _addSettingsEntry(tr("Data Collection"), "qrc:/Custom/qml/CustomSettings.qml");
+    }
 
     _selector = new CustomOverrideInterceptor();
     _qmlEngine->addUrlInterceptor(_selector);
