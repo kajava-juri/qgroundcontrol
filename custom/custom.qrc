@@ -20,7 +20,6 @@
     <file alias="QGroundControl/FlightDisplay/CustomGuidedActionsController.qml">src/CustomGuidedActionsController.qml</file>
     <file alias="QGroundControl/FlightDisplay/FlyViewCustomLayer.qml">src/FlyViewCustomLayer.qml</file>
     <file alias="QGroundControl/FlightDisplay/FlyViewToolStripActionList.qml">src/FlyViewToolStripActionList.qml</file>
-    <file alias="QGroundControl/Controls/AppSettings.qml">qml/AppSettings.qml</file>
     <file alias="CustomSettings.qml">src/CustomSettings.qml</file>
   </qresource>
   <qresource prefix="/Custom/qmlimages">

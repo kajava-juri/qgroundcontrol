@@ -3,6 +3,7 @@
 #include "QGCLoggingCategory.h"
 #include "Vehicle.h"
 #include "MultiVehicleManager.h"
+#include "CustomPlugin.h"
 #include <QtNetwork/QNetworkReply>
 #include <QtNetwork/QNetworkAccessManager>
 #include <QtCore/QJsonDocument>
@@ -38,8 +39,15 @@ void DataCollectionController::toggleRecording() {
 
 void DataCollectionController::_sendHttpRequest(QString endpoint) {
     qCDebug(DataCollectionControllerLog) << "Sending HTTP request to endpoint:" << endpoint;
+
+    CustomPlugin* plugin = qobject_cast<CustomPlugin*>(QGCCorePlugin::instance());
+    if (!plugin && !plugin->customSettings()) {
+        qCWarning(DataCollectionControllerLog) << "CustomPlugin or CustomSettings not available";
+        return;
+    }
+    QString httpUrl = plugin->customSettings()->httpUrl()->rawValue().toString();
     
-    QNetworkRequest request(QUrl(QString("http://127.0.0.1:5000/" + endpoint)));
+    QNetworkRequest request(QUrl(QString(httpUrl + "/" + endpoint)));
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
     
     // Create JSON body (empty object, Flask will use defaults)

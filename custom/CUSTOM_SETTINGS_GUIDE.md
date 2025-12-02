@@ -195,6 +195,8 @@ SettingsPage {
 
 ### 7. Override AppSettings.qml (Optional)
 
+Better and recommended way is to create your own view.
+
 To inject custom settings into the standard settings menu:
 
 **File:** `custom/qml/AppSettings.qml`

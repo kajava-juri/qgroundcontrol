@@ -6,9 +6,9 @@
         {
             "name":      "httpUrl",
             "shortDesc": "Data collection HTTP Url",
-            "longDesc":  "HTTP url address and port to communicate with the data collection script. Example: 0.0.0.0:5000",
+            "longDesc":  "HTTP url address and port to communicate with the data collection script. Example: http://0.0.0.0:5000",
             "type":             "string",
-            "default":     "0.0.0.0:5000"
+            "default":     "http://0.0.0.0:5000"
         },
         {
             "name":      "webSocketUrl",

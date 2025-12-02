@@ -14,6 +14,7 @@ import QtCharts
 
 import QGroundControl
 import QGroundControl.Controls
+import QGroundControl.FactControls
 
 import Custom.Widgets
 
@@ -38,6 +39,7 @@ Item {
     property string _messageTitle:          ""
     property string _messageText:           ""
     property real   _toolsMargin:           ScreenTools.defaultFontPixelWidth * 0.75
+    property var    _customSettings: QGroundControl.corePlugin.customSettings
 
     function secondsToHHMMSS(timeS) {
         var sec_num = parseInt(timeS, 10);
@@ -176,6 +178,46 @@ Item {
             anchors.top: parent.top
             anchors.right: parent.right
             anchors.margins: 5
+        }
+    }
+
+    Rectangle {
+        anchors.fill: parent
+        anchors.topMargin: 64
+        color: "transparent"
+
+        QGCButton {
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.margins: ScreenTools.defaultFontPixelWidth
+            text: qsTr("Data Collection Settings")
+            onClicked: {
+                dataCollectionDialogComponent.createObject(mainWindow).open()
+            }
+        }
+
+        Component {
+            id: dataCollectionDialogComponent
+            QGCPopupDialog {
+                title: qsTr("Data Collection Settings")
+                buttons: Dialog.Close
+
+                SettingsGroupLayout {
+                    LabelledFactTextField {
+                        Layout.fillWidth: true
+                        label: qsTr("HTTP URL")
+                        fact: _customSettings ? _customSettings.httpUrl : null
+                        visible: fact !== null
+                    }
+
+                    LabelledFactTextField {
+                        Layout.fillWidth: true
+                        label: qsTr("WebSocket URL")
+                        fact: _customSettings ? _customSettings.webSocketUrl : null
+                        visible: fact !== null
+                    }
+                }
+            }
         }
     }
 
