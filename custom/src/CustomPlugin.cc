@@ -46,7 +46,7 @@ CustomPlugin::CustomPlugin(QObject *parent)
 {
     qCDebug(CustomLog) << this;
 
-    _showAdvancedUI = false;
+    _showAdvancedUI = true;
     (void) connect(this, &QGCCorePlugin::showAdvancedUIChanged, this, &CustomPlugin::_advancedChanged);
 }
 
