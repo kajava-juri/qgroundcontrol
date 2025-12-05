@@ -16,13 +16,18 @@
 
 QGC_LOGGING_CATEGORY(CustomVideoManagerLog, "CustomVideoManager")
 
-
+// Helper to create all video sinks from render thread (like upstream FinishVideoInitialization)
 class FinishCustomVideoInitialization : public QRunnable {
 public:
-    FinishCustomVideoInitialization(CustomVideoManager* mgr) : _mgr(mgr) {}
+    FinishCustomVideoInitialization(CustomVideoManager* mgr)
+        : _mgr(mgr) {}
+
     void run() override {
+        // We're on render thread - create all sinks sequentially here (like upstream)
+        qCWarning(CustomVideoManagerLog) << "FinishCustomVideoInitialization::run() on render thread";
         _mgr->_initAfterQmlIsReady();
     }
+
 private:
     CustomVideoManager* _mgr;
 };
@@ -35,17 +40,41 @@ CustomVideoManager::CustomVideoManager(QObject* parent)
 
 void CustomVideoManager::_initAfterQmlIsReady()
 {
-    qCWarning(CustomVideoManagerLog) << "Scene graph initialized, setting up receivers";
+    qCWarning(CustomVideoManagerLog) << "_initAfterQmlIsReady - searching for video widgets";
 
-    // Now it is safe to create receivers/sinks
-    if (_pendingRgbWidget) {
-        _setupReceiver(STREAM_RGB, _pendingRgbWidget);
-        _pendingRgbWidget = nullptr;
+    // Try to find widgets - they may or may not be loaded yet
+    QQuickItem* rgbWidget = _mainWindow->findChild<QQuickItem*>("customRgbVideo");
+    QQuickItem* thermalWidget = _mainWindow->findChild<QQuickItem*>("customThermalVideo");
+
+    qCWarning(CustomVideoManagerLog) << "Found widgets - RGB:" << rgbWidget
+                                      << "Thermal:" << thermalWidget;
+
+    // If widgets not found, schedule another render job to retry
+    if (!rgbWidget || !thermalWidget) {
+        qCWarning(CustomVideoManagerLog) << "Widgets not ready yet, scheduling retry render job";
+        _mainWindow->scheduleRenderJob(
+            new FinishCustomVideoInitialization(this),
+            QQuickWindow::BeforeSynchronizingStage
+        );
+        return;
     }
-    if (_pendingThermalWidget) {
-        _setupReceiver(STREAM_THERMAL, _pendingThermalWidget);
-        _pendingThermalWidget = nullptr;
-    }
+
+    // Widgets found - set up BOTH receivers sequentially in this same render job (like upstream)
+    qCWarning(CustomVideoManagerLog) << "Both widgets found, initializing receivers sequentially in same render job";
+
+    // Setup RGB receiver
+    qCWarning(CustomVideoManagerLog) << "Setting up RGB receiver...";
+    _setupReceiver(STREAM_RGB, rgbWidget);
+    qCWarning(CustomVideoManagerLog) << "RGB receiver setup complete";
+
+    // Setup Thermal receiver immediately after (no delay - same render job!)
+    qCWarning(CustomVideoManagerLog) << "Setting up Thermal receiver...";
+    _setupReceiver(STREAM_THERMAL, thermalWidget);
+    qCWarning(CustomVideoManagerLog) << "Thermal receiver setup complete";
+
+    // Start both receivers after setup
+    _startReceiver(STREAM_RGB);
+    _startReceiver(STREAM_THERMAL);
 }
 
 
@@ -67,7 +96,7 @@ CustomVideoManager::~CustomVideoManager()
 
 void CustomVideoManager::init(QQuickWindow *mainWindow)
 {
-    
+
     if (_initialized) {
         qCWarning(CustomVideoManagerLog) << "CustomVideoManager already initialized";
         return;
@@ -76,18 +105,16 @@ void CustomVideoManager::init(QQuickWindow *mainWindow)
         qCCritical(CustomVideoManagerLog) << "init failed - mainWindow is NULL";
         return;
     }
-    
+
     // Initialize default URIs
     _streams[STREAM_RGB].uri = QStringLiteral("udp://0.0.0.0:5600");
     _streams[STREAM_THERMAL].uri = QStringLiteral("udp://0.0.0.0:5601");
 
     _mainWindow = mainWindow;
 
-    // any settings/connects you need:
-    // (void) connect(_videoSettings->videoSource(), &Fact::rawValueChanged, this, &CustomVideoManager::_videoSourceChanged);
-    // ... other connects as needed
+    qCWarning(CustomVideoManagerLog) << "CustomVideoManager init - scheduling render job";
 
-    // schedule the render job (same stage as upstream)
+    // Schedule initialization on render thread (like upstream VideoManager does)
     _mainWindow->scheduleRenderJob(
         new FinishCustomVideoInitialization(this),
         QQuickWindow::BeforeSynchronizingStage
@@ -96,51 +123,42 @@ void CustomVideoManager::init(QQuickWindow *mainWindow)
     _initialized = true;
 }
 
-void CustomVideoManager::initializeStreams(QQuickItem* rgbWidget,
-                                           QQuickItem* thermalWidget)
-{
-    _pendingRgbWidget = rgbWidget;
-    _pendingThermalWidget = thermalWidget;
-
-    if (_initialized) {
-        // Scene graph already ready
-        _initAfterQmlIsReady();
-    }
-}
-
 void CustomVideoManager::_setupReceiver(int streamIndex, QQuickItem* widget)
 {
     if (streamIndex < 0 || streamIndex >= STREAM_COUNT) {
         qCWarning(CustomVideoManagerLog) << "Invalid stream index:" << streamIndex;
         return;
     }
-
-    StreamInfo& stream = _streams[streamIndex];
-
+    qCWarning(CustomVideoManagerLog) << "_setupReceiver called for stream" << streamIndex;
     // Create receiver
-    stream.receiver = QGCCorePlugin::instance()->createVideoReceiver(this);
-    if (!stream.receiver) {
+    VideoReceiver *receiver = QGCCorePlugin::instance()->createVideoReceiver(this);
+    if (!receiver) {
         qCCritical(CustomVideoManagerLog) << "Failed to create receiver for stream" << streamIndex;
         return;
     }
-
+    qCWarning(CustomVideoManagerLog) << "Receiver created for stream" << streamIndex;
     // Assign name
-    stream.receiver->setName(
+    receiver->setName(
         streamIndex == STREAM_RGB ? "customRgbVideo" : "customThermalVideo"
     );
-    
-    stream.receiver->setWidget(widget);
 
-    // Create sink bound to your widget
-    void *sink = QGCCorePlugin::instance()->createVideoSink(widget, stream.receiver);
+    qCWarning(CustomVideoManagerLog) << "Setting widget for receiver of stream" << streamIndex;
+    receiver->setWidget(widget);
+    StreamInfo& stream = _streams[streamIndex];
+    stream.receiver = receiver;
+
+    // Create video sink directly (we're already on render thread from FinishCustomVideoInitialization)
+    qCWarning(CustomVideoManagerLog) << "Creating video sink for stream" << streamIndex;
+    void *sink = QGCCorePlugin::instance()->createVideoSink(widget, receiver);
     if (!sink) {
         qCCritical(CustomVideoManagerLog) << "createVideoSink failed for stream" << streamIndex;
-        return;
+    } else {
+        qCWarning(CustomVideoManagerLog) << "Video sink created for stream" << streamIndex;
+        stream.sink = sink;
+        receiver->setSink(sink);
     }
-    stream.sink = sink;
 
-    stream.receiver->setSink(sink);
-
+    qCWarning(CustomVideoManagerLog) << "Connecting signals for stream" << streamIndex;
     // Connect signals (no duplicates)
     connect(stream.receiver, &VideoReceiver::streamingChanged, this,
         [this, streamIndex](bool active) {
@@ -179,31 +197,36 @@ void CustomVideoManager::_setupReceiver(int streamIndex, QQuickItem* widget)
 
 void CustomVideoManager::_startReceiver(int streamIndex)
 {
+    qCWarning(CustomVideoManagerLog) << "_startReceiver called for stream" << streamIndex;
+
     if (streamIndex < 0 || streamIndex >= STREAM_COUNT) {
+        qCWarning(CustomVideoManagerLog) << "Invalid stream index:" << streamIndex;
         return;
     }
 
     StreamInfo& stream = _streams[streamIndex];
 
     if (!stream.receiver) {
-        qCWarning(CustomVideoManagerLog) << "No receiver for stream" << streamIndex;
+        qCWarning(CustomVideoManagerLog) << "No receiver for stream" << streamIndex << "- was _setupReceiver called?";
         return;
     }
 
     if (stream.receiver->started()) {
-        qCDebug(CustomVideoManagerLog) << "Stream" << streamIndex << "already started";
+        qCWarning(CustomVideoManagerLog) << "Stream" << streamIndex << "already started";
         return;
     }
 
     if (stream.uri.isEmpty()) {
-        qCWarning(CustomVideoManagerLog) << "No URI set for stream" << streamIndex;
+        qCWarning(CustomVideoManagerLog) << "No URI set for stream" << streamIndex << "- URI is empty!";
         return;
     }
 
-    qCWarning(CustomVideoManagerLog) << "Starting stream" << streamIndex << "URI:" << stream.uri;
+    qCWarning(CustomVideoManagerLog) << "Starting stream" << streamIndex << "URI:" << stream.uri
+                                      << "receiver:" << stream.receiver
+                                      << "sink:" << stream.sink;
     stream.receiver->setUri(stream.uri);
     stream.receiver->start(5000);  // 5 second timeout
-    qCWarning(CustomVideoManagerLog) << "Stream" << streamIndex << "start() called";
+    qCWarning(CustomVideoManagerLog) << "Stream" << streamIndex << "start() called successfully";
 }
 
 void CustomVideoManager::_stopReceiver(int streamIndex)

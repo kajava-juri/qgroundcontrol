@@ -34,15 +34,9 @@ public:
     explicit CustomVideoManager(QObject* parent = nullptr);
     ~CustomVideoManager() override;
 
-    friend class FinishCustomVideoInitialization;
-
     void init(QQuickWindow* mainWindow);
 
-    /**
-     * Initialize video receivers and connect to QML widgets
-     * Call this after QML is loaded
-     */
-    Q_INVOKABLE void initializeStreams(QQuickItem* rgbWidget, QQuickItem* thermalWidget);
+    friend class FinishCustomVideoInitialization;
 
     /**
      * Start/stop individual streams
@@ -90,7 +84,4 @@ private:
     StreamInfo _streams[STREAM_COUNT];
     QQuickWindow* _mainWindow = nullptr;
     bool _initialized = false;
-
-    QQuickItem* _pendingRgbWidget = nullptr;
-    QQuickItem* _pendingThermalWidget = nullptr;
 };
