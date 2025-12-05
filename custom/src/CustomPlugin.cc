@@ -292,6 +292,27 @@ QQmlApplicationEngine* CustomPlugin::createQmlApplicationEngine(QObject* parent)
         _addSettingsEntry(tr("Data Collection"), "qrc:/Custom/qml/CustomSettings.qml");
     }
 
+    // Initialize custom video manager for dual-stream video display
+    if (!_customVideoManager) {
+        _customVideoManager = new CustomVideoManager(this);
+
+        connect(_qmlEngine,
+            &QQmlApplicationEngine::objectCreated,
+            this,
+            [this](QObject* obj, const QUrl&) {
+
+                QQuickWindow* win = qobject_cast<QQuickWindow*>(obj);
+                if (!win) return;
+
+                qWarning() << "[CustomPlugin] MainWindow created:" << win;
+
+                _customVideoManager->init(win);
+            }
+        );
+    }
+
+
+
     _selector = new CustomOverrideInterceptor();
     _qmlEngine->addUrlInterceptor(_selector);
 

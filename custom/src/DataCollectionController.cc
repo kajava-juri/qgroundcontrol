@@ -127,6 +127,25 @@ void DataCollectionController::_onActiveVehicleChanged(Vehicle* vehicle)
                     qCDebug(DataCollectionControllerLog) << "Updated test_count:" << _testValue;
                 }
             }
+            else if (message.msgid == 269) { // VIDEO_STREAM_INFORMATION
+                mavlink_video_stream_information_t streamInfo;
+                mavlink_msg_video_stream_information_decode(&message, &streamInfo);
+
+                QString streamName = QString::fromLatin1(streamInfo.name, strnlen(streamInfo.name, sizeof(streamInfo.name)));
+                QString uri = QString::fromLatin1(streamInfo.uri, strnlen(streamInfo.uri, sizeof(streamInfo.uri)));
+
+                qCDebug(DataCollectionControllerLog) << "VIDEO_STREAM_INFORMATION received: Stream Name =" << streamName << "URI =" << uri;
+
+                if (_videoStreamName != streamName) {
+                    _videoStreamName = streamName;
+                    emit videoStreamNameChanged();
+                }
+
+                if (_videoStreamUri != uri) {
+                    _videoStreamUri = uri;
+                    emit videoStreamUriChanged();
+                }
+            }
         });
     } else {
         qCDebug(DataCollectionControllerLog) << "No active vehicle";

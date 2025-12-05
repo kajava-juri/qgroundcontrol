@@ -40,6 +40,7 @@ Item {
     property string _messageText:           ""
     property real   _toolsMargin:           ScreenTools.defaultFontPixelWidth * 0.75
     property var    _customSettings: QGroundControl.corePlugin.customSettings
+    property var    _customVideoManager: QGroundControl.corePlugin.customVideoManager
 
     function secondsToHHMMSS(timeS) {
         var sec_num = parseInt(timeS, 10);
@@ -54,6 +55,161 @@ Item {
 
     DataCollectionController {
         id: dataController
+    }
+
+    // Dual video streams for data collection
+    Rectangle {
+        id: dualVideoWidget
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.margins: ScreenTools.defaultFontPixelWidth
+        width: 640
+        height: 240
+        color: "black"
+        border.color: "white"
+        border.width: 2
+
+        // Component.onCompleted: {
+        //     console.log("DualVideoWidget: Initializing...")
+        //     // Get CustomVideoManager from corePlugin
+        //     if (QGroundControl.corePlugin && _customVideoManager) {
+
+        //         // Initialize streams with our video items
+        //         //_customVideoManager.initializeStreams(rgbVideoItem, thermalVideoItem)
+
+        //         console.log("DualVideoWidget: Initialized with CustomVideoManager")
+        //     } else {
+        //         console.warn("DualVideoWidget: CustomVideoManager not available!")
+        //     }
+        // }
+
+        Row {
+            anchors.fill: parent
+            spacing: 2
+
+            // RGB Video
+            Rectangle {
+                width: parent.width / 2 - 1
+                height: parent.height
+                color: "black"
+                border.color: "green"
+                border.width: 1
+
+                Item {
+                    id: rgbVideoItem
+                    objectName: "customRgbVideo"
+                    anchors.fill: parent
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "RGB Camera\n(Port 5600)"
+                        color: "white"
+                        horizontalAlignment: Text.AlignHCenter
+                    }
+                }
+            }
+
+            // Thermal Video
+            Rectangle {
+                width: parent.width / 2 - 1
+                height: parent.height
+                color: "black"
+                border.color: "red"
+                border.width: 1
+
+                Item {
+                    id: thermalVideoItem
+                    objectName: "customThermalVideo"
+                    anchors.fill: parent
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Thermal Camera\n(Port 5601)"
+                        color: "white"
+                        horizontalAlignment: Text.AlignHCenter
+                    }
+                }
+            }
+        }
+
+        // Detailed Status Panel (for debugging)
+    Rectangle {
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.margins: 258
+        width: debugColumn.width + 16
+        height: debugColumn.height + 16
+        color: "black"
+        opacity: 0.85
+        radius: 4
+        border.color: "white"
+        border.width: 1
+
+        Column {
+            id: debugColumn
+            anchors.centerIn: parent
+            spacing: 4
+
+            QGCLabel {
+                text: "Stream Status"
+                color: "cyan"
+                font.bold: true
+            }
+
+            QGCLabel {
+                text: "Manager: " + (_customVideoManager ? "✓" : "✗")
+                color: _customVideoManager ? "lime" : "red"
+            }
+
+            Rectangle { width: 150; height: 1; color: "gray" }
+
+            QGCLabel {
+                text: "RGB (0):"
+                color: "white"
+                font.bold: true
+            }
+            QGCLabel {
+                text: "  URI: " + (_customVideoManager ? _customVideoManager.getStreamUri(0) : "N/A")
+                color: "white"
+                font.pixelSize: ScreenTools.smallFontPointSize
+            }
+            QGCLabel {
+                text: "  Active: " + (_customVideoManager && _customVideoManager.isStreamActive(0) ? "✓" : "✗")
+                color: (_customVideoManager && _customVideoManager.isStreamActive(0)) ? "lime" : "red"
+            }
+            QGCLabel {
+                text: "  Decoding: " + (_customVideoManager && _customVideoManager.isStreamDecoding(0) ? "✓" : "✗")
+                color: (_customVideoManager && _customVideoManager.isStreamDecoding(0)) ? "lime" : "red"
+            }
+
+            Rectangle { width: 150; height: 1; color: "gray" }
+
+            QGCLabel {
+                text: "Thermal (1):"
+                color: "white"
+                font.bold: true
+            }
+            QGCLabel {
+                text: "  URI: " + (_customVideoManager ? _customVideoManager.getStreamUri(1) : "N/A")
+                color: "white"
+                font.pixelSize: ScreenTools.smallFontPointSize
+            }
+            QGCLabel {
+                text: "  Active: " + (_customVideoManager && _customVideoManager.isStreamActive(1) ? "✓" : "✗")
+                color: (_customVideoManager && _customVideoManager.isStreamActive(1)) ? "lime" : "red"
+            }
+            QGCLabel {
+                text: "  Decoding: " + (_customVideoManager && _customVideoManager.isStreamDecoding(1) ? "✓" : "✗")
+                color: (_customVideoManager && _customVideoManager.isStreamDecoding(1)) ? "lime" : "red"
+            }
+        }
+
+        // Click to hide (optional)
+        MouseArea {
+            anchors.fill: parent
+            onDoubleClicked: parent.visible = false
+        }
+    }
     }
 
     QGCToolInsets {
@@ -72,43 +228,22 @@ Item {
         bottomEdgeRightInset:   parent.height - attitudeIndicator.y
     }
 
-    Row {
-        anchors.right: parent.right
-        anchors.top: parent.top
-        anchors.margins: ScreenTools.defaultFontPixelWidth
-        spacing: ScreenTools.defaultFontPixelWidth / 2
+    // Row {
+    //     anchors.right: parent.right
+    //     anchors.top: parent.top
+    //     anchors.topMargin: ScreenTools.defaultFontPixelWidth * 4
+    //     anchors.margins: ScreenTools.defaultFontPixelWidth
+    //     spacing: ScreenTools.defaultFontPixelWidth / 2
         
-        Rectangle {
-            width: ScreenTools.defaultFontPixelWidth * 18
-            height: ScreenTools.defaultFontPixelHeight * 2
-            color: dataController.isCollecting ? "#e03131" : "#12b886"
-            radius: 4
-            
-            Text {
-                anchors.centerIn: parent
-                text: dataController.isCollecting ? "Stop Recording" : "Start Recording"
-                color: "white"
-            }
-            
-            MouseArea {
-                anchors.fill: parent
-                onClicked: dataController.toggleRecording()
-            }
-        }
-        
-        Text {
-            text: "Test Value: " + dataController.testValue
-            color: "white"
-            font.pixelSize: 24
-        }
 
-        // Text {
-        //     anchors.verticalCenter: parent.verticalCenter
-        //     text: dataController.recordingTime
-        //     color: "white"
-        //     visible: dataController.isCollecting
-        // }
-    }
+
+    //     // Text {
+    //     //     anchors.verticalCenter: parent.verticalCenter
+    //     //     text: dataController.recordingTime
+    //     //     color: "white"
+    //     //     visible: dataController.isCollecting
+    //     // }
+    // }
 
     Rectangle {
         width: 300
@@ -158,6 +293,7 @@ Item {
     }
 
     Rectangle {
+        id: rgbCameraView
         width: 300
         height: 240
         color: "black"
@@ -165,36 +301,66 @@ Item {
         anchors.top: parent.top
         anchors.topMargin: 248
 
-        Image {
-            anchors.fill: parent
-            fillMode: Image.PreserveAspectFit
-        }
+        property var _cameraManager: _activeVehicle ? _activeVehicle.cameraManager : null
+        property var _currentStream: _cameraManager ? _cameraManager.currentStreamInstance : null
+        property string _streamUri: _currentStream ? _currentStream.uri : ""
+
+        // CustomVideoStream {
+        //     id: mjpegStream
+        //     anchors.fill: parent
+        //     streamUri: dataController.videoStreamUri
+        // }
 
         Rectangle {
             width: 10
             height: 10
             radius: 5
-            //color: thermalReceiver.connected ? "#12b886" : "#e03131"
+            color: (rgbCameraView._currentStream && rgbCameraView._currentStream.isActive && mjpegStream.playing && mjpegStream.status !== AnimatedImage.Error) ? "#12b886" : "#e03131"
             anchors.top: parent.top
             anchors.right: parent.right
             anchors.margins: 5
         }
     }
 
-    Rectangle {
-        anchors.fill: parent
+
+    Column {
+        anchors.right: parent.right
+        anchors.top: parent.top
         anchors.topMargin: 64
-        color: "transparent"
+        anchors.margins: ScreenTools.defaultFontPixelWidth
+        spacing: ScreenTools.defaultFontPixelHeight
 
         QGCButton {
-            anchors.right: parent.right
-            anchors.top: parent.top
-            anchors.margins: ScreenTools.defaultFontPixelWidth
             text: qsTr("Data Collection Settings")
             onClicked: {
                 dataCollectionDialogComponent.createObject(mainWindow).open()
             }
         }
+
+        Rectangle {
+            width: ScreenTools.defaultFontPixelWidth * 18
+            height: ScreenTools.defaultFontPixelHeight * 2
+            color: dataController.isCollecting ? "#e03131" : "#12b886"
+            radius: 4
+            
+            Text {
+                anchors.centerIn: parent
+                text: dataController.isCollecting ? "Stop Recording" : "Start Recording"
+                color: "white"
+            }
+            
+            MouseArea {
+                anchors.fill: parent
+                onClicked: dataController.toggleRecording()
+            }
+        }
+
+        Text {
+            text: "Test Value: " + dataController.testValue
+            color: "white"
+            font.pixelSize: 24
+        }
+        
 
         Component {
             id: dataCollectionDialogComponent

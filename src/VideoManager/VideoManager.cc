@@ -515,12 +515,14 @@ bool VideoManager::_updateSettings(VideoReceiver *receiver)
         settingsChanged = true;
     }
 
+    // Thermal receivers should also use auto stream configuration
+    settingsChanged |= _updateAutoStream(receiver);
+
     if (receiver->isThermal()) {
         return settingsChanged;
     }
 
     settingsChanged |= _updateUVC(receiver);
-    settingsChanged |= _updateAutoStream(receiver);
 
     const QString source = _videoSettings->videoSource()->rawValue().toString();
     if (source == VideoSettings::videoSourceUDPH264) {

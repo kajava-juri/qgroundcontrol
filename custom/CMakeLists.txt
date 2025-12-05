@@ -69,6 +69,8 @@ qgc_set_qt_resource_alias(
     ${CMAKE_CURRENT_SOURCE_DIR}/res/Custom/Widgets/CustomSignalStrength.qml
     ${CMAKE_CURRENT_SOURCE_DIR}/res/Custom/Widgets/CustomToolBarButton.qml
     ${CMAKE_CURRENT_SOURCE_DIR}/res/Custom/Widgets/CustomVehicleButton.qml
+    ${CMAKE_CURRENT_SOURCE_DIR}/res/Custom/Widgets/CustomVideoStream.qml
+    ${CMAKE_CURRENT_SOURCE_DIR}/res/Custom/Widgets/DualVideoWidget.qml
 )
 
 qt_add_qml_module(CustomModule
@@ -84,6 +86,8 @@ qt_add_qml_module(CustomModule
         ${CMAKE_CURRENT_SOURCE_DIR}/res/Custom/Widgets/CustomSignalStrength.qml
         ${CMAKE_CURRENT_SOURCE_DIR}/res/Custom/Widgets/CustomToolBarButton.qml
         ${CMAKE_CURRENT_SOURCE_DIR}/res/Custom/Widgets/CustomVehicleButton.qml
+        ${CMAKE_CURRENT_SOURCE_DIR}/res/Custom/Widgets/CustomVideoStream.qml
+        ${CMAKE_CURRENT_SOURCE_DIR}/res/Custom/Widgets/DualVideoWidget.qml
     NO_PLUGIN
 )
 
@@ -94,6 +98,8 @@ qt_add_qml_module(CustomModule
 set(CUSTOM_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/CustomPlugin.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/CustomPlugin.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/CustomVideoManager.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/CustomVideoManager.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/DataCollectionController.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/DataCollectionController.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/AutoPilotPlugin/CustomAutoPilotPlugin.cc
