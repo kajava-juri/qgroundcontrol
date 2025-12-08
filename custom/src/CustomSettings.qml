@@ -33,6 +33,13 @@ SettingsPage {
             fact: _customSettings ? _customSettings.webSocketUrl : null
             visible: fact !== null
         }
+
+        LabelledFactComboBox {
+            Layout.fillWidth: true
+            label: qsTr("Data Format")
+            fact: _customSettings ? _customSettings.dataFormat : null
+            visible: fact !== null
+        }
     }
 
     QGCLabel {

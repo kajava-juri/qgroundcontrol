@@ -11,6 +11,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtCharts
+import org.freedesktop.gstreamer.Qt6GLVideoItem
 
 import QGroundControl
 import QGroundControl.Controls
@@ -41,6 +42,31 @@ Item {
     property real   _toolsMargin:           ScreenTools.defaultFontPixelWidth * 0.75
     property var    _customSettings: QGroundControl.corePlugin.customSettings
     property var    _customVideoManager: QGroundControl.corePlugin.customVideoManager
+    property bool   _rgbActive: false
+    property bool   _rgbDecoding: false
+    property bool   _thermalActive: false
+    property bool   _thermalDecoding: false
+
+    // Listen to CustomVideoManager signals
+    Connections {
+        target: _customVideoManager
+
+        function onStreamStateChanged(streamIndex, active) {
+            if (streamIndex === 0) {
+                _rgbActive = active
+            } else if (streamIndex === 1) {
+                _thermalActive = active
+            }
+        }
+
+        function onStreamDecodingChanged(streamIndex, decoding) {
+            if (streamIndex === 0) {
+                _rgbDecoding = decoding
+            } else if (streamIndex === 1) {
+                _thermalDecoding = decoding
+            }
+        }
+    }
 
     function secondsToHHMMSS(timeS) {
         var sec_num = parseInt(timeS, 10);
@@ -98,17 +124,18 @@ Item {
                 border.color: "green"
                 border.width: 1
 
-                Item {
+                GstGLQt6VideoItem {
                     id: rgbVideoItem
                     objectName: "customRgbVideo"
                     anchors.fill: parent
+                }
 
-                    Text {
-                        anchors.centerIn: parent
-                        text: "RGB Camera\n(Port 5600)"
-                        color: "white"
-                        horizontalAlignment: Text.AlignHCenter
-                    }
+                Text {
+                    anchors.centerIn: parent
+                    text: "RGB Camera\n(Port 5600)"
+                    color: "white"
+                    horizontalAlignment: Text.AlignHCenter
+                    z: 1  // Draw on top of video
                 }
             }
 
@@ -120,17 +147,18 @@ Item {
                 border.color: "red"
                 border.width: 1
 
-                Item {
+                GstGLQt6VideoItem {
                     id: thermalVideoItem
                     objectName: "customThermalVideo"
                     anchors.fill: parent
+                }
 
-                    Text {
-                        anchors.centerIn: parent
-                        text: "Thermal Camera\n(Port 5601)"
-                        color: "white"
-                        horizontalAlignment: Text.AlignHCenter
-                    }
+                Text {
+                    anchors.centerIn: parent
+                    text: "Thermal Camera\n(Port 5601)"
+                    color: "white"
+                    horizontalAlignment: Text.AlignHCenter
+                    z: 1  // Draw on top of video
                 }
             }
         }
@@ -177,12 +205,12 @@ Item {
                 font.pixelSize: ScreenTools.smallFontPointSize
             }
             QGCLabel {
-                text: "  Active: " + (_customVideoManager && _customVideoManager.isStreamActive(0) ? "✓" : "✗")
-                color: (_customVideoManager && _customVideoManager.isStreamActive(0)) ? "lime" : "red"
+                text: "  Active: " + (_rgbActive ? "✓" : "✗")
+                color: _rgbActive ? "lime" : "red"
             }
             QGCLabel {
-                text: "  Decoding: " + (_customVideoManager && _customVideoManager.isStreamDecoding(0) ? "✓" : "✗")
-                color: (_customVideoManager && _customVideoManager.isStreamDecoding(0)) ? "lime" : "red"
+                text: "  Decoding: " + (_rgbDecoding ? "✓" : "✗")
+                color: _rgbDecoding ? "lime" : "red"
             }
 
             Rectangle { width: 150; height: 1; color: "gray" }
@@ -198,12 +226,12 @@ Item {
                 font.pixelSize: ScreenTools.smallFontPointSize
             }
             QGCLabel {
-                text: "  Active: " + (_customVideoManager && _customVideoManager.isStreamActive(1) ? "✓" : "✗")
-                color: (_customVideoManager && _customVideoManager.isStreamActive(1)) ? "lime" : "red"
+                text: "  Active: " + (_thermalActive ? "✓" : "✗")
+                color: _thermalActive ? "lime" : "red"
             }
             QGCLabel {
-                text: "  Decoding: " + (_customVideoManager && _customVideoManager.isStreamDecoding(1) ? "✓" : "✗")
-                color: (_customVideoManager && _customVideoManager.isStreamDecoding(1)) ? "lime" : "red"
+                text: "  Decoding: " + (_thermalDecoding ? "✓" : "✗")
+                color: _thermalDecoding ? "lime" : "red"
             }
         }
 
@@ -295,41 +323,11 @@ Item {
         }
     }
 
-    Rectangle {
-        id: rgbCameraView
-        width: 300
-        height: 240
-        color: "black"
-        anchors.left: parent.left
-        anchors.top: parent.top
-        anchors.topMargin: 248
-
-        property var _cameraManager: _activeVehicle ? _activeVehicle.cameraManager : null
-        property var _currentStream: _cameraManager ? _cameraManager.currentStreamInstance : null
-        property string _streamUri: _currentStream ? _currentStream.uri : ""
-
-        // CustomVideoStream {
-        //     id: mjpegStream
-        //     anchors.fill: parent
-        //     streamUri: dataController.videoStreamUri
-        // }
-
-        Rectangle {
-            width: 10
-            height: 10
-            radius: 5
-            color: (rgbCameraView._currentStream && rgbCameraView._currentStream.isActive && mjpegStream.playing && mjpegStream.status !== AnimatedImage.Error) ? "#12b886" : "#e03131"
-            anchors.top: parent.top
-            anchors.right: parent.right
-            anchors.margins: 5
-        }
-    }
-
 
     Column {
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.topMargin: 64
+        anchors.topMargin: 258
         anchors.margins: ScreenTools.defaultFontPixelWidth
         spacing: ScreenTools.defaultFontPixelHeight
 
