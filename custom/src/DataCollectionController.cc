@@ -136,14 +136,30 @@ void DataCollectionController::_onActiveVehicleChanged(Vehicle* vehicle)
 
                 qCDebug(DataCollectionControllerLog) << "VIDEO_STREAM_INFORMATION received: Stream Name =" << streamName << "URI =" << uri;
 
-                if (_videoStreamName != streamName) {
-                    _videoStreamName = streamName;
-                    emit videoStreamNameChanged();
-                }
+                // Get CustomVideoManager from CustomPlugin
+                CustomPlugin* plugin = qobject_cast<CustomPlugin*>(QGCCorePlugin::instance());
 
-                if (_videoStreamUri != uri) {
-                    _videoStreamUri = uri;
-                    emit videoStreamUriChanged();
+                if (!plugin || !plugin->customVideoManager()) {
+                    qCWarning(DataCollectionControllerLog) << "CustomPlugin or CustomVideoManager not available";
+                    return;
+                }
+                
+                CustomVideoManager* videoManager = plugin->customVideoManager();
+                qCDebug(DataCollectionControllerLog) << "CustomVideoManager found, StreamNames size:" << CustomVideoManager::StreamNames.size();
+                
+                if (CustomVideoManager::StreamNames.empty()) {
+                    qCWarning(DataCollectionControllerLog) << "StreamNames map is empty - not initialized yet?";
+                    return;
+                }
+                
+                // Update the URI for the corresponding stream
+                for (const auto& [index, name] : CustomVideoManager::StreamNames) {
+                    qCDebug(DataCollectionControllerLog) << "Checking stream index" << index << "name" << QString::fromStdString(name);
+                    if (QString::fromStdString(name) == streamName) {
+                        videoManager->setStreamUri(index, uri);  // This will automatically restart if needed
+                        qCDebug(DataCollectionControllerLog) << "Updated stream URI for" << streamName << "to" << uri;
+                        break;
+                    }
                 }
             }
         });

@@ -32,6 +32,8 @@ private:
     CustomVideoManager* _mgr;
 };
 
+std::map<int, std::string> CustomVideoManager::StreamNames;
+
 CustomVideoManager::CustomVideoManager(QObject* parent)
     : QObject(parent)
 {
@@ -72,9 +74,8 @@ void CustomVideoManager::_initAfterQmlIsReady()
     _setupReceiver(STREAM_THERMAL, thermalWidget);
     qCWarning(CustomVideoManagerLog) << "Thermal receiver setup complete";
 
-    // Start both receivers after setup
-    _startReceiver(STREAM_RGB);
-    _startReceiver(STREAM_THERMAL);
+    // Don't start receivers here - wait for VIDEO_STREAM_INFORMATION with URIs
+    qCWarning(CustomVideoManagerLog) << "Receivers initialized, waiting for VIDEO_STREAM_INFORMATION messages";
 }
 
 
@@ -106,13 +107,19 @@ void CustomVideoManager::init(QQuickWindow *mainWindow)
         return;
     }
 
-    // Initialize default URIs
-    _streams[STREAM_RGB].uri = QStringLiteral("udp://0.0.0.0:5600");
-    _streams[STREAM_THERMAL].uri = QStringLiteral("udp://0.0.0.0:5601");
+    StreamNames = {
+        {STREAM_RGB, "customRgbVideo"},
+        {STREAM_THERMAL, "customThermalVideo"}
+    };
+
+    for (const auto& pair : StreamNames) {
+        qCWarning(CustomVideoManagerLog) << "Stream index/name:" << pair.first << "/" << QString::fromStdString(pair.second);
+    }
 
     _mainWindow = mainWindow;
 
-    qCWarning(CustomVideoManagerLog) << "CustomVideoManager init - scheduling render job";
+
+    qCWarning(CustomVideoManagerLog) << "CustomVideoManager init - scheduling render job test map ended";
 
     // Schedule initialization on render thread (like upstream VideoManager does)
     _mainWindow->scheduleRenderJob(
@@ -139,7 +146,7 @@ void CustomVideoManager::_setupReceiver(int streamIndex, QQuickItem* widget)
     qCWarning(CustomVideoManagerLog) << "Receiver created for stream" << streamIndex;
     // Assign name
     receiver->setName(
-        streamIndex == STREAM_RGB ? "customRgbVideo" : "customThermalVideo"
+        QString::fromStdString(StreamNames[streamIndex])
     );
 
     qCWarning(CustomVideoManagerLog) << "Setting widget for receiver of stream" << streamIndex;
@@ -262,12 +269,35 @@ void CustomVideoManager::restartStream(int streamIndex)
 
 void CustomVideoManager::setStreamUri(int streamIndex, const QString& uri)
 {
+    qCWarning(CustomVideoManagerLog) << "setStreamUri called for stream" << streamIndex << "URI:" << uri;
     if (streamIndex < 0 || streamIndex >= STREAM_COUNT) {
         return;
     }
 
+    qCDebug(CustomVideoManagerLog) << "Current URI for stream" << streamIndex << "is" << _streams[streamIndex].uri;
+    // Only update if different
+    if (_streams[streamIndex].uri == uri) {
+        qCWarning(CustomVideoManagerLog) << "Stream" << streamIndex << "URI unchanged, skipping";
+        return;
+    }
+
+    qCWarning(CustomVideoManagerLog) << "Stream" << streamIndex << "URI changing from" << _streams[streamIndex].uri << "to" << uri;
+    
+    // Update the URI
     _streams[streamIndex].uri = uri;
-    qCDebug(CustomVideoManagerLog) << "Stream" << streamIndex << "URI set to:" << uri;
+    emit streamUriChanged(streamIndex, uri);  // Notify QML
+    
+    // If receiver is already running, restart it with new URI
+    if (_streams[streamIndex].receiver && _streams[streamIndex].receiver->started()) {
+        qCWarning(CustomVideoManagerLog) << "Stream" << streamIndex << "is running, restarting with new URI";
+        restartStream(streamIndex);
+    } else if (_streams[streamIndex].receiver) {
+        // Receiver exists but not started - start it now with the new URI
+        qCWarning(CustomVideoManagerLog) << "Stream" << streamIndex << "not running, starting with new URI";
+        _startReceiver(streamIndex);
+    } else {
+        qCWarning(CustomVideoManagerLog) << "Stream" << streamIndex << "receiver not initialized yet";
+    }
 }
 
 QString CustomVideoManager::getStreamUri(int streamIndex) const
@@ -297,3 +327,20 @@ bool CustomVideoManager::isStreamDecoding(int streamIndex) const
     return _streams[streamIndex].decoding;
 }
 
+bool CustomVideoManager::_updateVideoUri(VideoReceiver *receiver, const QString &uri)
+{
+    if (!receiver) {
+        qCDebug(CustomVideoManagerLog) << "VideoReceiver is NULL";
+        return false;
+    }
+
+    if ((uri == receiver->uri()) && !receiver->uri().isNull()) {
+        return false;
+    }
+
+    qCDebug(CustomVideoManagerLog) << "New Video URI" << uri;
+
+    receiver->setUri(uri);
+
+    return true;
+}

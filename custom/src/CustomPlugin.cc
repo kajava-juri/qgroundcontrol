@@ -15,6 +15,7 @@
 #include "AppSettings.h"
 #include "VideoSettings.h"
 #include "BrandImageSettings.h"
+#include "FlightModeSettings.h"
 
 #include <QtCore/QApplicationStatic>
 #include <QtQml/QQmlApplicationEngine>
@@ -115,6 +116,14 @@ void CustomPlugin::adjustSettingMetaData(const QString& settingsGroup, FactMetaD
         } else if (metaData.name() == AppSettings::offlineEditingVehicleClassName) {
             metaData.setRawDefaultValue(QGCMAVLink::VehicleClassMultiRotor);
             visible = false;
+            return;
+        }
+    }
+    
+    if (settingsGroup == FlightModeSettings::settingsGroup) {
+        // Disable hold-to-confirm for flight mode changes
+        if (metaData.name() == FlightModeSettings::requireModeChangeConfirmationName) {
+            metaData.setRawDefaultValue(false);  // Default to instant click (no delay)
             return;
         }
     }

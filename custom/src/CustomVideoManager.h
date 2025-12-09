@@ -57,6 +57,8 @@ public:
     Q_INVOKABLE bool isStreamActive(int streamIndex) const;
     Q_INVOKABLE bool isStreamDecoding(int streamIndex) const;
 
+    static std::map<int, std::string> StreamNames;
+
     // Stream indices
     static constexpr int STREAM_RGB = 0;
     static constexpr int STREAM_THERMAL = 1;
@@ -65,23 +67,30 @@ public:
 signals:
     void streamStateChanged(int streamIndex, bool active);
     void streamDecodingChanged(int streamIndex, bool decoding);
+    void streamUriChanged(int streamIndex, const QString& uri);
 
 private:
+
     void _setupReceiver(int streamIndex, QQuickItem* widget);
     void _startReceiver(int streamIndex);
     void _stopReceiver(int streamIndex);
     void _initAfterQmlIsReady();
 
+    bool _updateVideoUri(VideoReceiver *receiver, const QString &uri);
     struct StreamInfo {
+        QString name;
+        QString uri;
         VideoReceiver* receiver = nullptr;
         void* sink = nullptr;
-        QQuickItem* widget = nullptr;
-        QString uri;
         bool active = false;
         bool decoding = false;
     };
 
-    StreamInfo _streams[STREAM_COUNT];
+    // StreamInfo _streams[STREAM_COUNT];
+    std::array<StreamInfo, STREAM_COUNT> _streams{{
+        {"RGB", "", nullptr, nullptr, false, false},      // Empty - wait for VIDEO_STREAM_INFORMATION
+        {"Thermal", "", nullptr, nullptr, false, false}   // Empty - wait for VIDEO_STREAM_INFORMATION
+    }};
     QQuickWindow* _mainWindow = nullptr;
     bool _initialized = false;
 };

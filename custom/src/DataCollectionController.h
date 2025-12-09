@@ -12,8 +12,6 @@ class DataCollectionController : public QObject
 
     Q_PROPERTY(bool isCollecting READ isCollecting NOTIFY isCollectingChanged)
     Q_PROPERTY(double testValue READ testValue NOTIFY testValueChanged)
-    Q_PROPERTY(QString videoStreamName READ videoStreamName NOTIFY videoStreamNameChanged)
-    Q_PROPERTY(QString videoStreamUri READ videoStreamUri NOTIFY videoStreamUriChanged)
 
 public:
     DataCollectionController(QObject* parent = nullptr);
@@ -30,7 +28,6 @@ signals:
     void isCollectingChanged();
     void testValueChanged();
     void videoStreamNameChanged();
-    void videoStreamUriChanged();
 
 private slots:
     void _onActiveVehicleChanged(Vehicle* vehicle);

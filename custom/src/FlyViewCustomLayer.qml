@@ -46,6 +46,8 @@ Item {
     property bool   _rgbDecoding: false
     property bool   _thermalActive: false
     property bool   _thermalDecoding: false
+    property string _rgbUri: ""
+    property string _thermalUri: ""
 
     // Listen to CustomVideoManager signals
     Connections {
@@ -65,6 +67,22 @@ Item {
             } else if (streamIndex === 1) {
                 _thermalDecoding = decoding
             }
+        }
+
+        function onStreamUriChanged(streamIndex, uri) {
+            if (streamIndex === 0) {
+                _rgbUri = uri
+            } else if (streamIndex === 1) {
+                _thermalUri = uri
+            }
+        }
+    }
+
+    // Initialize URIs on startup
+    Component.onCompleted: {
+        if (_customVideoManager) {
+            _rgbUri = _customVideoManager.getStreamUri(0)
+            _thermalUri = _customVideoManager.getStreamUri(1)
         }
     }
 
@@ -132,7 +150,7 @@ Item {
 
                 Text {
                     anchors.centerIn: parent
-                    text: "RGB Camera\n(Port 5600)"
+                    text: "RGB Camera"
                     color: "white"
                     horizontalAlignment: Text.AlignHCenter
                     z: 1  // Draw on top of video
@@ -155,7 +173,7 @@ Item {
 
                 Text {
                     anchors.centerIn: parent
-                    text: "Thermal Camera\n(Port 5601)"
+                    text: "Thermal Camera"
                     color: "white"
                     horizontalAlignment: Text.AlignHCenter
                     z: 1  // Draw on top of video
@@ -200,7 +218,7 @@ Item {
                 font.bold: true
             }
             QGCLabel {
-                text: "  URI: " + (_customVideoManager ? _customVideoManager.getStreamUri(0) : "N/A")
+                text: "  URI: " + _rgbUri
                 color: "white"
                 font.pixelSize: ScreenTools.smallFontPointSize
             }
@@ -221,7 +239,7 @@ Item {
                 font.bold: true
             }
             QGCLabel {
-                text: "  URI: " + (_customVideoManager ? _customVideoManager.getStreamUri(1) : "N/A")
+                text: "  URI: " + _thermalUri
                 color: "white"
                 font.pixelSize: ScreenTools.smallFontPointSize
             }
