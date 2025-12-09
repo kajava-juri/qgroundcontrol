@@ -98,12 +98,34 @@ void DataCollectionController::_onActiveVehicleChanged(Vehicle* vehicle)
 {
     if (_vehicle) {
         disconnect(_vehicle, nullptr, this, nullptr);
+        disconnect(_vehicle->vehicleLinkManager(), nullptr, this, nullptr);
+        
+        // Stop video streams when vehicle disconnects (like upstream VideoManager does)
+        CustomPlugin* plugin = qobject_cast<CustomPlugin*>(QGCCorePlugin::instance());
+        if (plugin && plugin->customVideoManager()) {
+            qCWarning(DataCollectionControllerLog) << "Vehicle disconnected - stopping streams";
+            plugin->customVideoManager()->stopStream(CustomVideoManager::STREAM_RGB);
+            plugin->customVideoManager()->stopStream(CustomVideoManager::STREAM_THERMAL);
+        }
     }
     
     _vehicle = vehicle;
     
     if (_vehicle) {
         qCDebug(DataCollectionControllerLog) << "Connected to vehicle" << _vehicle->id();
+        
+        // Connect to communication lost signal (like upstream VideoManager line 617)
+        connect(_vehicle->vehicleLinkManager(), &VehicleLinkManager::communicationLostChanged, this, 
+            [this](bool communicationLost) {
+                if (communicationLost) {
+                    CustomPlugin* plugin = qobject_cast<CustomPlugin*>(QGCCorePlugin::instance());
+                    if (plugin && plugin->customVideoManager()) {
+                        qCWarning(DataCollectionControllerLog) << "Communication lost - stopping streams";
+                        plugin->customVideoManager()->stopStream(CustomVideoManager::STREAM_RGB);
+                        plugin->customVideoManager()->stopStream(CustomVideoManager::STREAM_THERMAL);
+                    }
+                }
+            });
         
         // Listen to ALL MAVLink messages for debugging
         connect(_vehicle, &Vehicle::mavlinkMessageReceived, this, [this](const mavlink_message_t& message) {
