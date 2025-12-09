@@ -75,6 +75,7 @@ private:
     void _startReceiver(int streamIndex);
     void _stopReceiver(int streamIndex);
     void _initAfterQmlIsReady();
+    void _restartVideo(int streamIndex);
 
     bool _updateVideoUri(VideoReceiver *receiver, const QString &uri);
     struct StreamInfo {
@@ -84,6 +85,7 @@ private:
         void* sink = nullptr;
         bool active = false;
         bool decoding = false;
+        QTimer* decodingTimeoutTimer = nullptr;
     };
 
     // StreamInfo _streams[STREAM_COUNT];

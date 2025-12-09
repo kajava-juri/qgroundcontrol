@@ -179,6 +179,11 @@ void CustomVideoManager::_setupReceiver(int streamIndex, QQuickItem* widget)
             qCWarning(CustomVideoManagerLog) << "Stream" << streamIndex << "decoding changed:" << decoding;
             _streams[streamIndex].decoding = decoding;
             emit streamDecodingChanged(streamIndex, decoding);
+            
+            // Stop the timeout timer if decoding started successfully
+            if (decoding && _streams[streamIndex].decodingTimeoutTimer) {
+                _streams[streamIndex].decodingTimeoutTimer->stop();
+            }
     });
 
     connect(stream.receiver, &VideoReceiver::onStartComplete, this,
@@ -187,9 +192,35 @@ void CustomVideoManager::_setupReceiver(int streamIndex, QQuickItem* widget)
             if (status == VideoReceiver::STATUS_OK) {
                 qCWarning(CustomVideoManagerLog) << "Stream" << streamIndex << "starting decoding";
                 _streams[streamIndex].receiver->startDecoding(_streams[streamIndex].sink);
+                
+                // Start a timer - if decoding doesn't start in 5 seconds, restart the stream
+                if (!_streams[streamIndex].decodingTimeoutTimer) {
+                    _streams[streamIndex].decodingTimeoutTimer = new QTimer(this);
+                    _streams[streamIndex].decodingTimeoutTimer->setSingleShot(true);
+                    connect(_streams[streamIndex].decodingTimeoutTimer, &QTimer::timeout, this, [this, streamIndex]() {
+                        if (!_streams[streamIndex].decoding && _streams[streamIndex].receiver->started()) {
+                            qCWarning(CustomVideoManagerLog) << "Stream" << streamIndex << "decoding timeout - restarting to resync with RTP stream";
+                            _restartVideo(streamIndex);
+                        }
+                    });
+                }
+                _streams[streamIndex].decodingTimeoutTimer->start(5000); // 5 second timeout
             } else {
                 qCWarning(CustomVideoManagerLog) << "Stream" << streamIndex << "start FAILED with status:" << status;
             }
+    });
+
+    (void) connect(stream.receiver, &VideoReceiver::onStopComplete, this, [this, streamIndex](VideoReceiver::STATUS status) {
+        qCDebug(CustomVideoManagerLog) << "Stop complete" << _streams[streamIndex].receiver->name() << _streams[streamIndex].receiver->uri()  << ", status:" << status;
+        _streams[streamIndex].receiver->setStarted(false);
+        if (status == VideoReceiver::STATUS_INVALID_URL) {
+            qCDebug(CustomVideoManagerLog) << "Invalid video URL. Not restarting";
+        } else {
+            QTimer::singleShot(1000, _streams[streamIndex].receiver, [this, streamIndex]() {
+                qCDebug(CustomVideoManagerLog) << "Restarting video receiver" << _streams[streamIndex].receiver->name() << _streams[streamIndex].receiver->uri();
+                _startReceiver(streamIndex);
+            });
+        }
     });
 
     // Log when receiver gets timeout
@@ -261,6 +292,24 @@ void CustomVideoManager::stopStream(int streamIndex)
     _stopReceiver(streamIndex);
 }
 
+void CustomVideoManager::_restartVideo(int streamIndex)
+{
+    StreamInfo& stream = _streams[streamIndex];
+    qCDebug(CustomVideoManagerLog) << "Restart video receiver" << stream.receiver->name();
+
+    if (!stream.receiver) {
+        qCDebug(CustomVideoManagerLog) << "VideoReceiver is NULL";
+        return;
+    }
+
+    if (stream.receiver->started()) {
+        _stopReceiver(streamIndex);
+        // onStopComplete Signal Will Restart It
+    } else {
+        _startReceiver(streamIndex);
+    }
+}
+
 void CustomVideoManager::restartStream(int streamIndex)
 {
     _stopReceiver(streamIndex);
@@ -283,20 +332,19 @@ void CustomVideoManager::setStreamUri(int streamIndex, const QString& uri)
 
     qCWarning(CustomVideoManagerLog) << "Stream" << streamIndex << "URI changing from" << _streams[streamIndex].uri << "to" << uri;
     
-    // Update the URI
+    // Update the URI first
     _streams[streamIndex].uri = uri;
     emit streamUriChanged(streamIndex, uri);  // Notify QML
     
-    // If receiver is already running, restart it with new URI
+    // If receiver is already running, stop it - onStopComplete will restart with new URI
     if (_streams[streamIndex].receiver && _streams[streamIndex].receiver->started()) {
-        qCWarning(CustomVideoManagerLog) << "Stream" << streamIndex << "is running, restarting with new URI";
-        restartStream(streamIndex);
-    } else if (_streams[streamIndex].receiver) {
-        // Receiver exists but not started - start it now with the new URI
+        qCWarning(CustomVideoManagerLog) << "qqqqStream" << streamIndex << "is running, stopping to apply new URI";
+        _stopReceiver(streamIndex);
+        // onStopComplete handler will automatically restart with the new URI after 1 second
+    } else {
+        // Not running, start it now with the new URI
         qCWarning(CustomVideoManagerLog) << "Stream" << streamIndex << "not running, starting with new URI";
         _startReceiver(streamIndex);
-    } else {
-        qCWarning(CustomVideoManagerLog) << "Stream" << streamIndex << "receiver not initialized yet";
     }
 }
 
