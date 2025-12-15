@@ -35,3 +35,50 @@ cmake --build build --config Debug
 
 ./build/Debug/Custom-QGroundControl
 ```
+
+### Issues
+
+**redundant stream info messages**
+
+constant
+```
+   132.627 Warning: Stream 0 URI unchanged, skipping - CustomVideoManager - (CustomVideoManager::setStreamUri:329)
+   132.627 Updated stream URI for "customRgbVideo" to "udp://0.0.0.0:5600" - Custom.DataCollectionController - (DataCollectionController::_onActiveVehicleChanged(Vehicle*)::<lambda(const mavlink_message_t&)>:182)
+   132.627 VIDEO_STREAM_INFORMATION received: Stream Name = "customThermalVideo" URI = "udp://0.0.0.0:5601" - Custom.DataCollectionController - (DataCollectionController::_onActiveVehicleChanged(Vehicle*)::<lambda(const mavlink_message_t&)>:159)
+   132.627 CustomVideoManager found, StreamNames size: 2 - Custom.DataCollectionController - (DataCollectionController::_onActiveVehicleChanged(Vehicle*)::<lambda(const mavlink_message_t&)>:170)
+```
+
+when data collection mavlink is connected
+
+Solutions:
+
+* only send when actual stream is up, stream info does not need to be sent frequently
+
+
+**Vehicle mode switches to 'unknown'**
+
+Whenever mavlink is connected, the qgc goes crazy and toggles between 'unknown' and the vehivle actual state.
+Probably the mavlink script needs to communicate properly.
+
+```
+   645.036 Checking stream index 1 name "customThermalVideo" - Custom.DataCollectionController - (DataCollectionController::_onActiveVehicleChanged(Vehicle*)::<lambda(const mavlink_message_t&)>:179)
+   645.036 Warning: setStreamUri called for stream 1 URI: "udp://0.0.0.0:5601" - CustomVideoManager - (CustomVideoManager::setStreamUri:321)
+   645.036 Warning: Stream 1 URI unchanged, skipping - CustomVideoManager - (CustomVideoManager::setStreamUri:329)
+   645.036 Updated stream URI for "customThermalVideo" to "udp://0.0.0.0:5601" - Custom.DataCollectionController - (DataCollectionController::_onActiveVehicleChanged(Vehicle*)::<lambda(const mavlink_message_t&)>:182)
+   646.035 Warning: Flight mode group not set - default - (HealthAndArmingCheckReport::update:45)
+   647.035 Warning: Flight mode group not set - default - (HealthAndArmingCheckReport::update:45)
+   647.035 VIDEO_STREAM_INFORMATION received: Stream Name = "customRgbVideo" URI = "udp://0.0.0.0:5600" - Custom.DataCollectionController - (DataCollectionController::_onActiveVehicleChanged(Vehicle*)::<lambda(const mavlink_message_t&)>:159)
+   647.035 CustomVideoManager found, StreamNames size: 2 - Custom.DataCollectionController - (DataCollectionController::_onActiveVehicleChanged(Vehicle*)::<lambda(const mavlink_message_t&)>:170)
+   647.035 Checking stream index 0 name "customRgbVideo" - Custom.DataCollectionController - (DataCollectionController::_onActiveVehicleChanged(Vehicle*)::<lambda(const mavlink_message_t&)>:179)
+   647.035 Warning: setStreamUri called for stream 0 URI: "udp://0.0.0.0:5600" - CustomVideoManager - (CustomVideoManager::setStreamUri:321)
+   647.03
+```
+
+Solutions:
+
+* 
+
+
+**Stream status indicators are not updating**
+
+Whenver the data collection stops, the stream/decoding status does not trigger, why?

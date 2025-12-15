@@ -294,53 +294,6 @@ Item {
     //     // }
     // }
 
-    Rectangle {
-        width: 300
-        height: 240
-        color: qgcPal.window
-
-        ValueAxis {
-            id: axisX
-            min: 0
-            max: 100
-        }
-
-        ValueAxis {
-            id: axisY
-            min: -20
-            max: 20
-        }
-
-        LineSeries {
-            name: "Accel X"
-            axisX: axisX
-            axisY: axisY
-            color: "#e03131"
-        }
-        
-        LineSeries {
-            name: "Accel Y"
-            axisX: axisX
-            axisY: axisY
-            color: "#12b886"
-        }
-
-        LineSeries {
-            name: "Accel Z"
-            axisX: axisX
-            axisY: axisY
-            color: "#228be6"
-        }
-
-        Connections {
-            target: dataController
-            function onImuDataChanged(x, y, z) {
-                // Update series
-
-            }
-        }
-    }
-
 
     Column {
         anchors.right: parent.right

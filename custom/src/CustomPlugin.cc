@@ -106,19 +106,19 @@ void CustomPlugin::adjustSettingMetaData(const QString& settingsGroup, FactMetaD
 {
     QGCCorePlugin::adjustSettingMetaData(settingsGroup, metaData, visible);
 
-    if (settingsGroup == AppSettings::settingsGroup) {
-        // This tells QGC than when you are creating Plans while not connected to a vehicle
-        // the specific firmware/vehicle the plan is for.
-        if (metaData.name() == AppSettings::offlineEditingFirmwareClassName) {
-            metaData.setRawDefaultValue(QGCMAVLink::FirmwareClassPX4);
-            visible = false;
-            return;
-        } else if (metaData.name() == AppSettings::offlineEditingVehicleClassName) {
-            metaData.setRawDefaultValue(QGCMAVLink::VehicleClassMultiRotor);
-            visible = false;
-            return;
-        }
-    }
+    // if (settingsGroup == AppSettings::settingsGroup) {
+    //     // This tells QGC than when you are creating Plans while not connected to a vehicle
+    //     // the specific firmware/vehicle the plan is for.
+    //     if (metaData.name() == AppSettings::offlineEditingFirmwareClassName) {
+    //         metaData.setRawDefaultValue(QGCMAVLink::FirmwareClassPX4);
+    //         visible = false;
+    //         return;
+    //     } else if (metaData.name() == AppSettings::offlineEditingVehicleClassName) {
+    //         metaData.setRawDefaultValue(QGCMAVLink::VehicleClassMultiRotor);
+    //         visible = false;
+    //         return;
+    //     }
+    // }
     
     if (settingsGroup == FlightModeSettings::settingsGroup) {
         // Disable hold-to-confirm for flight mode changes
