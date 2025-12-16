@@ -11,8 +11,6 @@ import QtQuick
 import QtQuick.Controls
 
 import QGroundControl
-
-
 import QGroundControl.Controls
 
 Rectangle {
@@ -29,7 +27,6 @@ Rectangle {
     property var _dropPanel: dropPanel
 
     function simulateClick(buttonIndex) {
-        buttonIndex = buttonIndex + 1 // skip over title label
         var button = toolStripColumn.children[buttonIndex]
         if (button.checkable) {
             button.checked = !button.checked

@@ -3,22 +3,16 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 import QGroundControl
-
-
 import QGroundControl.Controls
 import QGroundControl.FactControls
 
-
-
-
 // Editor for Mission Settings
 Rectangle {
-    id:                 valuesRect
-    width:              availableWidth
-    height:             valuesColumn.height + (_margin * 2)
-    color:              qgcPal.windowShadeDark
-    visible:            missionItem.isCurrentItem
-    radius:             _radius
+    id:     valuesRect
+    width:  availableWidth
+    height: valuesColumn.height + (_margin * 2)
+    color:  qgcPal.windowShadeDark
+    radius: _radius
 
     property var    _masterControler:               masterController
     property var    _missionController:             _masterControler.missionController
@@ -147,8 +141,9 @@ Rectangle {
 
             CameraSection {
                 id:         cameraSection
-                checked:    !_waypointsOnlyMode && missionItem.cameraSection.settingsSpecified
                 visible:    _showCameraSection
+
+                Component.onCompleted: checked = !_waypointsOnlyMode && missionItem.cameraSection.settingsSpecified
             }
 
             QGCLabel {
