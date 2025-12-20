@@ -35,6 +35,7 @@ public:
     ~CustomVideoManager() override;
 
     void init(QQuickWindow* mainWindow);
+    void clearAllStreamInfo();
 
     friend class FinishCustomVideoInitialization;
 
@@ -76,6 +77,8 @@ private:
     void _stopReceiver(int streamIndex);
     void _initAfterQmlIsReady();
     void _restartVideo(int streamIndex);
+    void _setActiveVehicle(Vehicle* vehicle);
+    void _communicationLostChanged(bool communicationLost);
 
     bool _updateVideoUri(VideoReceiver *receiver, const QString &uri);
     struct StreamInfo {
@@ -86,6 +89,7 @@ private:
         bool active = false;
         bool decoding = false;
         QTimer* decodingTimeoutTimer = nullptr;
+        bool allowAutoRestart = true;
     };
 
     // StreamInfo _streams[STREAM_COUNT];
@@ -95,4 +99,5 @@ private:
     }};
     QQuickWindow* _mainWindow = nullptr;
     bool _initialized = false;
+    Vehicle* _activeVehicle = nullptr;
 };

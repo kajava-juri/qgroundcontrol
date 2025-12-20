@@ -115,19 +115,6 @@ Item {
 
         Component.onCompleted: {
             console.log("DualVideoWidget: Initializing...")
-            // Get CustomVideoManager from corePlugin
-            // if (QGroundControl.corePlugin && _customVideoManager) {
-            //     // Initialize streams with our video items
-            //     // _customVideoManager.initializeStreams(rgbVideoItem, thermalVideoItem)
-
-            //     // Start both streams
-            //     _customVideoManager.startStream(0)  // RGB stream
-            //     _customVideoManager.startStream(1)  // Thermal stream
-
-            //     console.log("DualVideoWidget: Initialized and started streams")
-            // } else {
-            //     console.warn("DualVideoWidget: CustomVideoManager not available!")
-            // }
         }
 
         Row {

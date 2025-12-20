@@ -100,13 +100,10 @@ void DataCollectionController::_onActiveVehicleChanged(Vehicle* vehicle)
         disconnect(_vehicle, nullptr, this, nullptr);
         disconnect(_vehicle->vehicleLinkManager(), nullptr, this, nullptr);
         
-        // Stop video streams when vehicle disconnects (like upstream VideoManager does)
-        CustomPlugin* plugin = qobject_cast<CustomPlugin*>(QGCCorePlugin::instance());
-        if (plugin && plugin->customVideoManager()) {
-            qCWarning(DataCollectionControllerLog) << "Vehicle disconnected - stopping streams";
-            plugin->customVideoManager()->stopStream(CustomVideoManager::STREAM_RGB);
-            plugin->customVideoManager()->stopStream(CustomVideoManager::STREAM_THERMAL);
-        }
+        // Stop periodic stream info requests when vehicle disconnects
+        qCDebug(DataCollectionControllerLog) << "Vehicle disconnecting - stopping periodic requests";
+        _stopPeriodicStreamInfoRequest();
+        
     }
     
     _vehicle = vehicle;
@@ -114,16 +111,22 @@ void DataCollectionController::_onActiveVehicleChanged(Vehicle* vehicle)
     if (_vehicle) {
         qCDebug(DataCollectionControllerLog) << "Connected to vehicle" << _vehicle->id();
         
+        // Start periodic stream info requests
+        _startPeriodicStreamInfoRequest();
+        
         // Connect to communication lost signal (like upstream VideoManager line 617)
         connect(_vehicle->vehicleLinkManager(), &VehicleLinkManager::communicationLostChanged, this, 
             [this](bool communicationLost) {
                 if (communicationLost) {
-                    CustomPlugin* plugin = qobject_cast<CustomPlugin*>(QGCCorePlugin::instance());
-                    if (plugin && plugin->customVideoManager()) {
-                        qCWarning(DataCollectionControllerLog) << "Communication lost - stopping streams";
-                        plugin->customVideoManager()->stopStream(CustomVideoManager::STREAM_RGB);
-                        plugin->customVideoManager()->stopStream(CustomVideoManager::STREAM_THERMAL);
-                    }
+                    qCWarning(DataCollectionControllerLog) << "Communication lost - stopping streams and periodic requests";
+                    
+                    // Stop periodic MAVLink requests
+                    _stopPeriodicStreamInfoRequest();
+                    
+                } else {
+                    qCDebug(DataCollectionControllerLog) << "Communication restored - restarting periodic requests";
+                    // Restart periodic requests when communication restored
+                    _startPeriodicStreamInfoRequest();
                 }
             });
         
@@ -180,6 +183,7 @@ void DataCollectionController::_onActiveVehicleChanged(Vehicle* vehicle)
                     if (QString::fromStdString(name) == streamName) {
                         videoManager->setStreamUri(index, uri);  // This will automatically restart if needed
                         qCDebug(DataCollectionControllerLog) << "Updated stream URI for" << streamName << "to" << uri;
+                        // Keep polling - don't stop timer (continuous monitoring)
                         break;
                     }
                 }
@@ -188,4 +192,94 @@ void DataCollectionController::_onActiveVehicleChanged(Vehicle* vehicle)
     } else {
         qCDebug(DataCollectionControllerLog) << "No active vehicle";
     }
+}
+
+//-----------------------------------------------------------------------------
+void
+DataCollectionController::_startPeriodicStreamInfoRequest()
+{
+    // Don't start if already running
+    if (_streamInfoTimer.isActive()) {
+        qCDebug(DataCollectionControllerLog) << "Periodic stream info requests already running";
+        return;
+    }
+    
+    qCDebug(DataCollectionControllerLog) << "Starting periodic stream info requests (indefinite polling)";
+    
+    // Set timer to repeat indefinitely (not single-shot)
+    _streamInfoTimer.setSingleShot(false);
+    
+    // Connect timer timeout to request handler
+    connect(&_streamInfoTimer, &QTimer::timeout, this, &DataCollectionController::_requestStreamInfo);
+    
+    // Make initial request immediately, then start periodic timer
+    QTimer::singleShot(1000, this, [this]() {
+        if (_vehicle) {  // Check vehicle still exists
+            _requestStreamInfo();
+            _streamInfoTimer.start(STREAM_INFO_POLL_INTERVAL_MS);
+        }
+    });
+}
+
+//-----------------------------------------------------------------------------
+void
+DataCollectionController::_stopPeriodicStreamInfoRequest()
+{
+    qCDebug(DataCollectionControllerLog) << "Stopping periodic stream info requests";
+    
+    if (_streamInfoTimer.isActive()) {
+        _streamInfoTimer.stop();
+    }
+    disconnect(&_streamInfoTimer, nullptr, this, nullptr);
+    _streamInfoRetries = 0;
+}
+
+//-----------------------------------------------------------------------------
+void
+DataCollectionController::_requestStreamInfo()
+{
+    if (!_vehicle) {
+        qCWarning(DataCollectionControllerLog) << "_requestStreamInfo: No active vehicle";
+        return;
+    }
+    
+    qCDebug(DataCollectionControllerLog) << "_requestStreamInfo() - retries:" << _streamInfoRetries;
+    
+    // Alternate between modern REQUEST_MESSAGE and legacy command
+    // (following VehicleCameraControl pattern)
+    if (_streamInfoRetries % 2 == 0) {
+        qCDebug(DataCollectionControllerLog) << "  Sending REQUEST_MESSAGE:MAVLINK_MSG_ID_VIDEO_STREAM_INFORMATION";
+        _vehicle->sendMavCommand(
+            103,                             // target component (100)
+            MAV_CMD_REQUEST_MESSAGE,                        // command id
+            false,                                          // showError
+            MAVLINK_MSG_ID_VIDEO_STREAM_INFORMATION,        // msgid (269)
+            0);                                             // stream ID (0 = all streams)
+    } else {
+        qCDebug(DataCollectionControllerLog) << "  Sending MAV_CMD_REQUEST_VIDEO_STREAM_INFORMATION (legacy)";
+        _vehicle->sendMavCommand(
+            103,                             // target component (100)
+            MAV_CMD_REQUEST_VIDEO_STREAM_INFORMATION,       // command id
+            false,                                          // showError
+            0);                                             // stream ID (0 = all streams)
+    }
+    
+    _streamInfoRetries++;  // Increment for next poll
+}
+
+//-----------------------------------------------------------------------------
+void
+DataCollectionController::_streamInfoTimeout()
+{
+    // Timer fired - this is just the periodic poll, not a timeout
+    // The timer is non-single-shot so it will keep firing every STREAM_INFO_POLL_INTERVAL_MS
+    
+    if (!_vehicle) {
+        qCWarning(DataCollectionControllerLog) << "Periodic poll fired but no vehicle - stopping timer";
+        _stopPeriodicStreamInfoRequest();
+        return;
+    }
+    
+    qCDebug(DataCollectionControllerLog) << "Periodic stream info poll triggered";
+    _requestStreamInfo();
 }

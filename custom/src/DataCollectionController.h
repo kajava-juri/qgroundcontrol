@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QtCore/QObject>
+#include <QtCore/QTimer>
 #include <QtQml/qqml.h>
 #include <QtNetwork/QNetworkAccessManager>
 #include "Vehicle.h"
@@ -31,6 +32,8 @@ signals:
 
 private slots:
     void _onActiveVehicleChanged(Vehicle* vehicle);
+    void _requestStreamInfo();          // Request VIDEO_STREAM_INFORMATION
+    void _streamInfoTimeout();          // Timeout handler
 
 private:
     bool _isCollecting{false};
@@ -40,5 +43,12 @@ private:
     QString _videoStreamUri;
 
     void _sendHttpRequest(QString endpoint);
+    void _startPeriodicStreamInfoRequest();  // Start periodic requests
+    void _stopPeriodicStreamInfoRequest();   // Stop periodic requests
+    
     QNetworkAccessManager _networkManager;
+    QTimer _streamInfoTimer;            // Timer for periodic requests
+    int _streamInfoRetries{0};          // Counter for alternating between modern/legacy commands
+    
+    static constexpr int STREAM_INFO_POLL_INTERVAL_MS = 5000;  // Poll every 5 seconds
 };

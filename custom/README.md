@@ -36,23 +36,19 @@ cmake --build build --config Debug
 ./build/Debug/Custom-QGroundControl
 ```
 
+**Test video stream**
+
+``` bash
+gst-launch-1.0 -v udpsrc port=5600 address=0.0.0.0 ! "application/x-rtp, media=(string)video, clock-rate=(int)90000, encoding-name=(string)H264, payload=(int)96" ! rtph264depay ! h264parse ! avdec_h264 ! videoconvert ! autovideosink
+```
+
 ### Issues
 
-**redundant stream info messages**
+**QGC steals the stream and sinks into its own corner camera widget**
 
-constant
-```
-   132.627 Warning: Stream 0 URI unchanged, skipping - CustomVideoManager - (CustomVideoManager::setStreamUri:329)
-   132.627 Updated stream URI for "customRgbVideo" to "udp://0.0.0.0:5600" - Custom.DataCollectionController - (DataCollectionController::_onActiveVehicleChanged(Vehicle*)::<lambda(const mavlink_message_t&)>:182)
-   132.627 VIDEO_STREAM_INFORMATION received: Stream Name = "customThermalVideo" URI = "udp://0.0.0.0:5601" - Custom.DataCollectionController - (DataCollectionController::_onActiveVehicleChanged(Vehicle*)::<lambda(const mavlink_message_t&)>:159)
-   132.627 CustomVideoManager found, StreamNames size: 2 - Custom.DataCollectionController - (DataCollectionController::_onActiveVehicleChanged(Vehicle*)::<lambda(const mavlink_message_t&)>:170)
-```
+**Solutions**
 
-when data collection mavlink is connected
-
-Solutions:
-
-* only send when actual stream is up, stream info does not need to be sent frequently
+* Create a custom message or use the simple existing message type to communicate the stream info, since now the custom plugin is not dependant on qgc setting up the stream, the custom video manager does all that
 
 
 **Vehicle mode switches to 'unknown'**
