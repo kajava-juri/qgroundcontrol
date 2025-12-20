@@ -68,6 +68,7 @@ static QMap<int, QString> px4_board_name_map {
     {28, "nxp_fmuk66-v3_default"},
     {30, "nxp_fmuk66-e_default"},
     {31, "nxp_fmurt1062-v1_default"},
+    {37, "nxp_mr-tropic_default"},
     {85, "freefly_can-rtk-gps_default"},
     {120, "cubepilot_cubeyellow_default"},
     {136, "mro_x21-777_default"},
@@ -95,7 +96,8 @@ static QMap<int, QString> px4_board_name_map {
     {5600, "zeroone_x6_default"},
     {6110, "svehicle_e2_default"},
     {7000, "cuav_7-nano_default"},
-    {7001, "cuav_fmu-v6x_default"}
+    {7001, "cuav_fmu-v6x_default"},
+    {7002, "cuav_x25-evo_default"}
 };
 
 uint qHash(const FirmwareUpgradeController::FirmwareIdentifier& firmwareId)
