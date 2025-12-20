@@ -99,5 +99,6 @@ private:
     }};
     QQuickWindow* _mainWindow = nullptr;
     bool _initialized = false;
+    bool _initAfterQmlIsReadyDone = false;
     Vehicle* _activeVehicle = nullptr;
 };

@@ -44,39 +44,29 @@ CustomVideoManager::CustomVideoManager(QObject* parent)
 
 void CustomVideoManager::_initAfterQmlIsReady()
 {
+    // Only run once to prevent infinite loop
+    if (_initAfterQmlIsReadyDone) {
+        qCWarning(CustomVideoManagerLog) << "_initAfterQmlIsReady called multiple times";
+        return;
+    }
+    if (!_mainWindow) {
+        qCCritical(CustomVideoManagerLog) << "_initAfterQmlIsReady called with NULL mainWindow";
+        return;
+    }
+    _initAfterQmlIsReadyDone = true;
+
     qCWarning(CustomVideoManagerLog) << "_initAfterQmlIsReady - searching for video widgets";
 
-    // Try to find widgets - they may or may not be loaded yet
+    // Find widgets
     QQuickItem* rgbWidget = _mainWindow->findChild<QQuickItem*>("customRgbVideo");
     QQuickItem* thermalWidget = _mainWindow->findChild<QQuickItem*>("customThermalVideo");
 
-    qCWarning(CustomVideoManagerLog) << "Found widgets - RGB:" << rgbWidget
-                                      << "Thermal:" << thermalWidget;
+    qCWarning(CustomVideoManagerLog) << "Found widgets - RGB:" << rgbWidget << "Thermal:" << thermalWidget;
 
-    // If widgets not found, schedule another render job to retry
-    if (!rgbWidget || !thermalWidget) {
-        qCWarning(CustomVideoManagerLog) << "Widgets not ready yet, scheduling retry render job";
-        _mainWindow->scheduleRenderJob(
-            new FinishCustomVideoInitialization(this),
-            QQuickWindow::BeforeSynchronizingStage
-        );
-        return;
-    }
-
-    // Widgets found - set up BOTH receivers sequentially in this same render job (like upstream)
-    qCWarning(CustomVideoManagerLog) << "Both widgets found, initializing receivers sequentially in same render job";
-
-    // Setup RGB receiver
-    qCWarning(CustomVideoManagerLog) << "Setting up RGB receiver...";
+    // Setup receivers
     _setupReceiver(STREAM_RGB, rgbWidget);
-    qCWarning(CustomVideoManagerLog) << "RGB receiver setup complete";
-
-    // Setup Thermal receiver immediately after (no delay - same render job!)
-    qCWarning(CustomVideoManagerLog) << "Setting up Thermal receiver...";
     _setupReceiver(STREAM_THERMAL, thermalWidget);
-    qCWarning(CustomVideoManagerLog) << "Thermal receiver setup complete";
 
-    // Don't start receivers here - wait for VIDEO_STREAM_INFORMATION with URIs
     qCWarning(CustomVideoManagerLog) << "Receivers initialized, waiting for VIDEO_STREAM_INFORMATION messages";
 }
 
@@ -141,6 +131,10 @@ void CustomVideoManager::_setupReceiver(int streamIndex, QQuickItem* widget)
 {
     if (streamIndex < 0 || streamIndex >= STREAM_COUNT) {
         qCWarning(CustomVideoManagerLog) << "Invalid stream index:" << streamIndex;
+        return;
+    }
+    if (!widget) {
+        qCWarning(CustomVideoManagerLog) << "Widget is NULL for stream" << streamIndex << "- skipping setup";
         return;
     }
     qCWarning(CustomVideoManagerLog) << "_setupReceiver called for stream" << streamIndex;
