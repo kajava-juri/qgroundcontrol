@@ -50,8 +50,28 @@ void DataCollectionController::_sendHttpRequest(QString endpoint) {
     QNetworkRequest request(QUrl(QString(httpUrl + "/" + endpoint)));
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
     
+/*
+        folder_name = req_data.get('folder', 'data')
+        timeout = int(req_data.get('timeout', 30))
+        enable_voxl_logging = bool(req_data.get('enable_voxl_logging', False))
+        enable_rtk_logging = bool(req_data.get('enable_rtk_logging', False))
+        # enable_qgc_streaming = bool(req_data.get('enable_qgc_streaming', False))
+        enable_qgc_streaming = True
+        qgc_ip = req_data.get('qgc_ip', '127.0.0.1')
+        qgc_port = int(req_data.get('qgc_port', 14550))
+        use_hardware_encoding = bool(req_data.get('use_hardware_encoding', False))
+*/
+
     // Create JSON body (empty object, Flask will use defaults)
     QJsonObject jsonObj;
+    jsonObj["folder"] = plugin->customSettings()->folderName()->rawValue().toString();
+    jsonObj["timeout"] = plugin->customSettings()->timeout()->rawValue().toInt();
+    jsonObj["enable_voxl_logging"] = plugin->customSettings()->enableVoxlLogging()->rawValue().toBool();
+    jsonObj["enable_rtk_logging"] = plugin->customSettings()->enableRtkLogging()->rawValue().toBool();
+    jsonObj["enable_qgc_streaming"] = plugin->customSettings()->enableQgcStreaming()->rawValue().toBool();
+    jsonObj["qgc_ip"] = plugin->customSettings()->qgcIp()->rawValue().toString();
+    jsonObj["qgc_port"] = plugin->customSettings()->qgcPort()->rawValue().toInt();
+    jsonObj["use_hardware_encoding"] = plugin->customSettings()->useHardwareEncoding()->rawValue().toBool();
     QJsonDocument jsonDoc(jsonObj);
     QByteArray jsonData = jsonDoc.toJson();
     
@@ -250,7 +270,7 @@ DataCollectionController::_requestStreamInfo()
     if (_streamInfoRetries % 2 == 0) {
         qCDebug(DataCollectionControllerLog) << "  Sending REQUEST_MESSAGE:MAVLINK_MSG_ID_VIDEO_STREAM_INFORMATION";
         _vehicle->sendMavCommand(
-            103,                             // target component (100)
+            103,                             // target component
             MAV_CMD_REQUEST_MESSAGE,                        // command id
             false,                                          // showError
             MAVLINK_MSG_ID_VIDEO_STREAM_INFORMATION,        // msgid (269)
@@ -258,7 +278,7 @@ DataCollectionController::_requestStreamInfo()
     } else {
         qCDebug(DataCollectionControllerLog) << "  Sending MAV_CMD_REQUEST_VIDEO_STREAM_INFORMATION (legacy)";
         _vehicle->sendMavCommand(
-            103,                             // target component (100)
+            103,                             // target component
             MAV_CMD_REQUEST_VIDEO_STREAM_INFORMATION,       // command id
             false,                                          // showError
             0);                                             // stream ID (0 = all streams)

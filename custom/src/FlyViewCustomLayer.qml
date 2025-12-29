@@ -292,7 +292,10 @@ Item {
         QGCButton {
             text: qsTr("Data Collection Settings")
             onClicked: {
-                dataCollectionDialogComponent.createObject(mainWindow).open()
+                var dialog = dataCollectionDialogComponent.createObject(mainWindow, {
+                    "_customSettings": QGroundControl.corePlugin.customSettings
+                })
+                dialog.open()
             }
         }
 
@@ -323,25 +326,8 @@ Item {
 
         Component {
             id: dataCollectionDialogComponent
-            QGCPopupDialog {
-                title: qsTr("Data Collection Settings")
-                buttons: Dialog.Close
-
-                SettingsGroupLayout {
-                    LabelledFactTextField {
-                        Layout.fillWidth: true
-                        label: qsTr("HTTP URL")
-                        fact: _customSettings ? _customSettings.httpUrl : null
-                        visible: fact !== null
-                    }
-
-                    LabelledFactTextField {
-                        Layout.fillWidth: true
-                        label: qsTr("WebSocket URL")
-                        fact: _customSettings ? _customSettings.webSocketUrl : null
-                        visible: fact !== null
-                    }
-                }
+            DataCollectionDialog {
+                // _customSettings passed via createObject properties
             }
         }
     }

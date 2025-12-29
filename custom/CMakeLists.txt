@@ -70,6 +70,7 @@ qgc_set_qt_resource_alias(
     ${CMAKE_CURRENT_SOURCE_DIR}/res/Custom/Widgets/CustomToolBarButton.qml
     ${CMAKE_CURRENT_SOURCE_DIR}/res/Custom/Widgets/CustomVehicleButton.qml
     ${CMAKE_CURRENT_SOURCE_DIR}/res/Custom/Widgets/CustomVideoStream.qml
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/DataCollectionDialog.qml
 )
 
 qt_add_qml_module(CustomModule
@@ -86,6 +87,7 @@ qt_add_qml_module(CustomModule
         ${CMAKE_CURRENT_SOURCE_DIR}/res/Custom/Widgets/CustomToolBarButton.qml
         ${CMAKE_CURRENT_SOURCE_DIR}/res/Custom/Widgets/CustomVehicleButton.qml
         ${CMAKE_CURRENT_SOURCE_DIR}/res/Custom/Widgets/CustomVideoStream.qml
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/DataCollectionDialog.qml
     NO_PLUGIN
 )
 

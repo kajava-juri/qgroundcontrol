@@ -19,4 +19,12 @@ public:
 
     DEFINE_SETTINGFACT(httpUrl)
     DEFINE_SETTINGFACT(webSocketUrl)
+    DEFINE_SETTINGFACT(folderName)
+    DEFINE_SETTINGFACT(timeout)
+    DEFINE_SETTINGFACT(enableVoxlLogging)
+    DEFINE_SETTINGFACT(enableRtkLogging)
+    DEFINE_SETTINGFACT(enableQgcStreaming)
+    DEFINE_SETTINGFACT(qgcIp)
+    DEFINE_SETTINGFACT(qgcPort)
+    DEFINE_SETTINGFACT(useHardwareEncoding)
 };
