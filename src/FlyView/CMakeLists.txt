@@ -38,6 +38,8 @@ qt_add_qml_module(FlyViewModule
         FlyViewTopRightPanel.qml
         FlyViewVideo.qml
         FlyViewWidgetLayer.qml
+        FlyViewGrid.qml
+        GridState.qml
         GuidedActionConfirm.qml
         GuidedActionLand.qml
         GuidedActionPause.qml

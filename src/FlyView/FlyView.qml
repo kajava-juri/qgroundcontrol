@@ -58,6 +58,8 @@ Item {
 
     property real   _fullItemZorder:    0
     property real   _pipItemZorder:     QGroundControl.zOrderWidgets
+    property bool   _gridModeActive:    false  // Toggle between classic and grid mode
+    property var    _gridView:          null   // Reference to grid view component
 
     function _calcCenterViewPort() {
         var newToolInset = Qt.rect(0, 0, width, height)
@@ -80,6 +82,8 @@ Item {
     Item {
         id:                 mapHolder
         anchors.fill:       parent
+
+        property alias flyViewGrid: gridView  // Expose gridView as a property
 
         FlyViewMap {
             id:                     mapControl
@@ -108,9 +112,18 @@ Item {
             show:                   QGroundControl.videoManager.hasVideo && !QGroundControl.videoManager.fullScreen &&
                                         (videoControl.pipState.state === videoControl.pipState.pipState || mapControl.pipState.state === mapControl.pipState.pipState)
             z:                      QGroundControl.zOrderWidgets
+            visible:                !_gridModeActive  // Hide when grid mode active
 
             property real leftEdgeBottomInset: visible ? width + anchors.margins : 0
             property real bottomEdgeLeftInset: visible ? height + anchors.margins : 0
+        }
+
+        // New Grid View
+        FlyViewGrid {
+            id:             gridView
+            anchors.fill:   parent
+            z:              QGroundControl.zOrderWidgets
+            visible:        _gridModeActive
         }
 
         FlyViewWidgetLayer {
@@ -124,7 +137,7 @@ Item {
             z:                      _fullItemZorder + 2 // we need to add one extra layer for map 3d viewer (normally was 1)
             parentToolInsets:       _toolInsets
             mapControl:             _mapControl
-            visible:                !QGroundControl.videoManager.fullScreen
+            visible:                !QGroundControl.videoManager.fullScreen && !_gridModeActive  // Hide in grid mode
             isViewer3DOpen:         viewer3DWindow.isOpen
         }
 
@@ -134,7 +147,7 @@ Item {
             z:                  _fullItemZorder + 2
             parentToolInsets:   widgetLayer.totalToolInsets
             mapControl:         _mapControl
-            visible:            !QGroundControl.videoManager.fullScreen
+            visible:            !QGroundControl.videoManager.fullScreen && !_gridModeActive  // Hide in grid mode
         }
 
         // Development tool for visualizing the insets for a paticular layer, show if needed
@@ -146,7 +159,7 @@ Item {
             anchors.right:          guidedValueSlider.visible ? guidedValueSlider.left : parent.right
             z:                      widgetLayer.z + 1
             insetsToView:           widgetLayer.totalToolInsets
-            visible:                false
+            visible:                true
         }
 
         GuidedActionsController {
@@ -188,5 +201,37 @@ Item {
         guidedValueSlider:  _guidedValueSlider
         utmspSliderTrigger: utmspSendActTrigger
         visible:            !QGroundControl.videoManager.fullScreen
+    }
+
+    // Simple toggle button (temporary - will move to toolbar later)
+    Rectangle {
+        id: gridToggleButton
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.topMargin: toolbar.height + 10
+        anchors.rightMargin: 10
+        width: 120
+        height: 40
+        color: _gridModeActive ? "cyan" : "gray"
+        border.color: "white"
+        border.width: 2
+        radius: 4
+        z: QGroundControl.zOrderTopMost
+
+        Text {
+            anchors.centerIn: parent
+            text: _gridModeActive ? "Classic Mode" : "Grid Mode"
+            color: "black"
+            font.pixelSize: 14
+            font.bold: true
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            onClicked: {
+                _gridModeActive = !_gridModeActive
+                gridView.gridState.state = _gridModeActive ? "grid" : "hidden"
+            }
+        }
     }
 }
