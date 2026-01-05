@@ -166,7 +166,7 @@ Item {
         id:                 scaleText
         map:                mapControl
         font.bold:          true
-        anchors.left:       parent.left
+        anchors.left:       buttonsOnLeft ? leftEnd.left : parent.left
         anchors.right:      rightEnd.right
         horizontalAlignment:Text.AlignRight
         text:               "0 m"

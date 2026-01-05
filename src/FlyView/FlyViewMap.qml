@@ -33,6 +33,7 @@ FlightMap {
     property var    planMasterController
     property bool   pipMode:                    false   // true: map is shown in a small pip mode
     property var    toolInsets                          // Insets for the center viewport area
+    property real   toolbarHeight:              0       // Direct toolbar height for MapScale
 
     property var    _activeVehicle:             QGroundControl.multiVehicleManager.activeVehicle
     property var    _planMasterController:      planMasterController
@@ -769,12 +770,13 @@ FlightMap {
 
     MapScale {
         id:                 mapScale
-        anchors.margins:    _toolsMargin
         anchors.left:       parent.left
         anchors.top:        parent.top
+        anchors.topMargin:  pipMode ? _toolsMargin : toolbarHeight + _toolsMargin
+        anchors.leftMargin: pipMode ? _toolsMargin : (toolInsets ? toolInsets.leftEdgeTopInset : 0) + _toolsMargin
         mapControl:         _root
         buttonsOnLeft:      true
-        visible:            !ScreenTools.isTinyScreen && QGroundControl.corePlugin.options.flyView.showMapScale && mapControl.pipState.state === mapControl.pipState.windowState
+        visible:            !ScreenTools.isTinyScreen && QGroundControl.corePlugin.options.flyView.showMapScale
 
         property real centerInset: visible ? parent.height - y : 0
     }

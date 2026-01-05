@@ -180,7 +180,7 @@ Item {
         buttonsOnLeft:      true
         zoomButtonsVisible: false
         autoHide:           true
-        visible:            !ScreenTools.isTinyScreen && QGroundControl.corePlugin.options.flyView.showMapScale && !isViewer3DOpen && mapControl.pipState.state === mapControl.pipState.fullState
+        visible:            false  // Disabled - using MapScale in FlyViewMap instead
 
         property real topEdgeCenterInset: visible ? y + height : 0
     }

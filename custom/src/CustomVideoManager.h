@@ -36,6 +36,7 @@ public:
 
     void init(QQuickWindow* mainWindow);
     void clearAllStreamInfo();
+    Q_INVOKABLE void reinitializeWidgets();  // Re-find widgets after mode change
 
     friend class FinishCustomVideoInitialization;
 

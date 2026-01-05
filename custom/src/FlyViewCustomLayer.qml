@@ -16,13 +16,15 @@ import org.freedesktop.gstreamer.Qt6GLVideoItem
 import QGroundControl
 import QGroundControl.Controls
 import QGroundControl.FactControls
+import QGroundControl.FlightMap
 
 import Custom.Widgets
 
 Item {
     property var parentToolInsets                       // These insets tell you what screen real estate is available for positioning the controls in your overlay
     property var totalToolInsets:   _totalToolInsets    // The insets updated for the custom overlay additions
-    property var mapControl
+    property var mapControl:           _mapControl
+    property bool gridModeActive:   false               // Whether grid mode is active
 
     readonly property string noGPS:         qsTr("NO GPS")
     readonly property real   indicatorValueWidth:   ScreenTools.defaultFontPixelWidth * 7
@@ -102,6 +104,7 @@ Item {
     }
 
     // Dual video streams for data collection
+    // Hidden in grid mode as video streams are shown in grid cells
     Rectangle {
         id: dualVideoWidget
         anchors.right: parent.right
@@ -112,6 +115,7 @@ Item {
         color: "black"
         border.color: "white"
         border.width: 2
+        visible: !gridModeActive  // Hide when grid mode is active
 
         Component.onCompleted: {
             console.log("DualVideoWidget: Initializing...")
@@ -129,10 +133,14 @@ Item {
                 border.color: "green"
                 border.width: 1
 
-                GstGLQt6VideoItem {
-                    id: rgbVideoItem
-                    objectName: "customRgbVideo"
+                // Only create video item when visible to avoid conflicts with grid mode
+                Loader {
                     anchors.fill: parent
+                    active: dualVideoWidget.visible
+                    sourceComponent: GstGLQt6VideoItem {
+                        id: rgbVideoItem
+                        objectName: "customRgbVideo"
+                    }
                 }
 
                 Text {
@@ -152,10 +160,14 @@ Item {
                 border.color: "red"
                 border.width: 1
 
-                GstGLQt6VideoItem {
-                    id: thermalVideoItem
-                    objectName: "customThermalVideo"
+                // Only create video item when visible to avoid conflicts with grid mode
+                Loader {
                     anchors.fill: parent
+                    active: dualVideoWidget.visible
+                    sourceComponent: GstGLQt6VideoItem {
+                        id: thermalVideoItem
+                        objectName: "customThermalVideo"
+                    }
                 }
 
                 Text {

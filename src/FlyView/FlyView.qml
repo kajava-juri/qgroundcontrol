@@ -92,8 +92,10 @@ Item {
             pipView:                _pipView
             pipMode:                !_mainWindowIsMap
             toolInsets:             customOverlay.totalToolInsets
+            toolbarHeight:          toolbar.height
             mapName:                "FlightDisplayView"
-            enabled:                !viewer3DWindow.isOpen
+            enabled:                !viewer3DWindow.isOpen && !_gridModeActive
+            visible:                !_gridModeActive  // Hide main map in grid mode
         }
 
         FlyViewVideo {
@@ -122,8 +124,11 @@ Item {
         FlyViewGrid {
             id:             gridView
             anchors.fill:   parent
+            anchors.top: parent.top
+            anchors.topMargin: toolbar.height
             z:              QGroundControl.zOrderWidgets
             visible:        _gridModeActive
+            planMasterController:  _planController
         }
 
         FlyViewWidgetLayer {
@@ -147,6 +152,7 @@ Item {
             z:                  _fullItemZorder + 2
             parentToolInsets:   widgetLayer.totalToolInsets
             mapControl:         _mapControl
+            gridModeActive:     _gridModeActive  // Pass grid mode state
             visible:            !QGroundControl.videoManager.fullScreen && !_gridModeActive  // Hide in grid mode
         }
 
@@ -231,6 +237,13 @@ Item {
             onClicked: {
                 _gridModeActive = !_gridModeActive
                 gridView.gridState.state = _gridModeActive ? "grid" : "hidden"
+
+                // Give Loaders time to create/destroy widgets, then reinitialize CustomVideoManager
+                Qt.callLater(function() {
+                    if (QGroundControl.corePlugin.customVideoManager) {
+                        QGroundControl.corePlugin.customVideoManager.reinitializeWidgets()
+                    }
+                })
             }
         }
     }

@@ -11,6 +11,7 @@ qt_add_qml_module(FlyViewModule
     RESOURCE_PREFIX /qml
     QML_FILES
         CustomGuidedActionsController.qml
+        CustomVideoStream.qml
         DefaultChecklist.qml
         FixedWingChecklist.qml
         FlightDisplayViewDummy.qml
@@ -39,6 +40,7 @@ qt_add_qml_module(FlyViewModule
         FlyViewVideo.qml
         FlyViewWidgetLayer.qml
         FlyViewGrid.qml
+        GridMapCell.qml
         GridState.qml
         GuidedActionConfirm.qml
         GuidedActionLand.qml

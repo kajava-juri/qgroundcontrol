@@ -12,11 +12,15 @@ import QtQuick.Layouts
 
 import QGroundControl
 import QGroundControl.Controls
+import QGroundControl.FlyView
 
 // Simple grid container - shows a basic 2x2 grid of colored rectangles for testing
 Item {
     id: root
     visible: false  // Start hidden
+
+    // Properties passed from parent (FlyView)
+    property var planMasterController: null  // Required for map cell
 
     // Expose the grid state to external access
     property alias gridState: _gridState
@@ -31,80 +35,51 @@ Item {
     GridLayout {
         id: gridContainer
         anchors.fill: parent
-        anchors.margins: 10
+        anchors.top: parent.top
         columns: 2  // 2 columns = 2x2 grid
         columnSpacing: 4
         rowSpacing: 4
 
         // Cell 0: Red
-        Rectangle {
+        GridMapCell {
             Layout.fillWidth: true
             Layout.fillHeight: true
             color: "red"
             border.color: "white"
             border.width: 2
+            planController: root.planMasterController
 
-            Text {
-                anchors.centerIn: parent
-                text: "Cell 0\n(Click me)"
-                color: "white"
-                font.pixelSize: 18
-                horizontalAlignment: Text.AlignHCenter
-            }
+            // MouseArea {
+            //     anchors.fill: parent
+            //     onClicked: {
+            //         console.log("Clicked Cell 0")
+            //     }
+            // }
+        }
 
-            MouseArea {
-                anchors.fill: parent
-                onClicked: {
-                    console.log("Clicked Cell 0")
-                }
+        // Cell 1: RGB Video Stream
+        // Only create when grid is visible to avoid conflicts with CustomLayer
+        Loader {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            active: root.visible
+            sourceComponent: CustomVideoStream {
+                streamObjectName: "customRgbVideo"
+                streamLabel: "RGB Camera"
+                borderColor: "green"
             }
         }
 
-        // Cell 1: Green
-        Rectangle {
+        // Cell 2: Thermal Video Stream
+        // Only create when grid is visible to avoid conflicts with CustomLayer
+        Loader {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            color: "green"
-            border.color: "white"
-            border.width: 2
-
-            Text {
-                anchors.centerIn: parent
-                text: "Cell 1\n(Click me)"
-                color: "white"
-                font.pixelSize: 18
-                horizontalAlignment: Text.AlignHCenter
-            }
-
-            MouseArea {
-                anchors.fill: parent
-                onClicked: {
-                    console.log("Clicked Cell 1")
-                }
-            }
-        }
-
-        // Cell 2: Blue
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            color: "blue"
-            border.color: "white"
-            border.width: 2
-
-            Text {
-                anchors.centerIn: parent
-                text: "Cell 2\n(Click me)"
-                color: "white"
-                font.pixelSize: 18
-                horizontalAlignment: Text.AlignHCenter
-            }
-
-            MouseArea {
-                anchors.fill: parent
-                onClicked: {
-                    console.log("Clicked Cell 2")
-                }
+            active: root.visible
+            sourceComponent: CustomVideoStream {
+                streamObjectName: "customThermalVideo"
+                streamLabel: "Thermal Camera"
+                borderColor: "red"
             }
         }
 

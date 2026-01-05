@@ -70,6 +70,71 @@ void CustomVideoManager::_initAfterQmlIsReady()
     qCWarning(CustomVideoManagerLog) << "Receivers initialized, waiting for VIDEO_STREAM_INFORMATION messages";
 }
 
+void CustomVideoManager::reinitializeWidgets()
+{
+    if (!_mainWindow) {
+        qCCritical(CustomVideoManagerLog) << "reinitializeWidgets called with NULL mainWindow";
+        return;
+    }
+
+    qCWarning(CustomVideoManagerLog) << "reinitializeWidgets - re-finding video widgets after mode change";
+
+    // Find widgets (they may have been recreated by Loaders)
+    QQuickItem* rgbWidget = _mainWindow->findChild<QQuickItem*>("customRgbVideo");
+    QQuickItem* thermalWidget = _mainWindow->findChild<QQuickItem*>("customThermalVideo");
+
+    qCWarning(CustomVideoManagerLog) << "Found widgets - RGB:" << rgbWidget << "Thermal:" << thermalWidget;
+
+    // For each stream, update the widget reference and recreate sink if needed
+    for (int i = 0; i < STREAM_COUNT; i++) {
+        QQuickItem* newWidget = (i == STREAM_RGB) ? rgbWidget : thermalWidget;
+
+        if (!newWidget) {
+            qCWarning(CustomVideoManagerLog) << "Widget not found for stream" << i << "- may be hidden";
+            continue;
+        }
+
+        // Stop decoding if currently active
+        bool wasDecoding = _streams[i].decoding;
+        if (_streams[i].receiver && _streams[i].receiver->started()) {
+            qCWarning(CustomVideoManagerLog) << "Stopping stream" << i << "before widget change";
+            _streams[i].receiver->stopDecoding();
+        }
+
+        // Release old sink
+        if (_streams[i].sink) {
+            qCWarning(CustomVideoManagerLog) << "Releasing old sink for stream" << i;
+            QGCCorePlugin::instance()->releaseVideoSink(_streams[i].sink);
+            _streams[i].sink = nullptr;
+        }
+
+        // Update widget reference
+        if (_streams[i].receiver) {
+            qCWarning(CustomVideoManagerLog) << "Updating widget for stream" << i;
+            _streams[i].receiver->setWidget(newWidget);
+        }
+
+        // Create new sink
+        qCWarning(CustomVideoManagerLog) << "Creating new sink for stream" << i;
+        void *sink = QGCCorePlugin::instance()->createVideoSink(newWidget, _streams[i].receiver);
+        if (!sink) {
+            qCCritical(CustomVideoManagerLog) << "Failed to create sink for stream" << i;
+        } else {
+            qCWarning(CustomVideoManagerLog) << "New sink created for stream" << i;
+            _streams[i].sink = sink;
+            _streams[i].receiver->setSink(sink);
+        }
+
+        // Restart decoding if it was active
+        if (wasDecoding && !_streams[i].uri.isEmpty()) {
+            qCWarning(CustomVideoManagerLog) << "Restarting stream" << i << "after widget change";
+            _restartVideo(i);
+        }
+    }
+
+    qCWarning(CustomVideoManagerLog) << "Widget reinitialization complete";
+}
+
 
 CustomVideoManager::~CustomVideoManager()
 {
