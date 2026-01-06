@@ -14,6 +14,8 @@ import QGroundControl
 import QGroundControl.Controls
 import QGroundControl.FlyView
 
+import Custom.Widgets
+
 // Simple grid container - shows a basic 2x2 grid of colored rectangles for testing
 Item {
     id: root
@@ -29,6 +31,10 @@ Item {
     GridState {
         id: _gridState
         gridView: root  // Set reference to this GridView
+    }
+
+    DataCollectionController {
+        id: dataController
     }
 
     // Simple test grid - 4 cells
@@ -83,26 +89,65 @@ Item {
             }
         }
 
-        // Cell 3: Yellow
+        // Cell 3: Data Collection Controls
         Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            color: "yellow"
+            color: "#2b2d30"  // Dark background instead of yellow
             border.color: "black"
             border.width: 2
 
-            Text {
+            Column {
                 anchors.centerIn: parent
-                text: "Cell 3\n(Click me)"
-                color: "black"
-                font.pixelSize: 18
-                horizontalAlignment: Text.AlignHCenter
+                width: Math.min(parent.width * 0.9, ScreenTools.defaultFontPixelWidth * 20)
+                spacing: ScreenTools.defaultFontPixelHeight * 0.75
+
+                QGCButton {
+                    width: parent.width
+                    text: qsTr("Data Collection Settings")
+                    onClicked: {
+                        var dialog = dataCollectionDialogComponent.createObject(mainWindow, {
+                            "_customSettings": QGroundControl.corePlugin.customSettings
+                        })
+                        dialog.open()
+                    }
+                }
+
+                Rectangle {
+                    width: parent.width
+                    height: ScreenTools.defaultFontPixelHeight * 3
+                    color: dataController.isCollecting ? "#e03131" : "#12b886"
+                    radius: 4
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: dataController.isCollecting ? "Stop Recording" : "Start Recording"
+                        color: "white"
+                        font.pixelSize: ScreenTools.defaultFontPixelHeight
+                        font.bold: true
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: dataController.toggleRecording()
+                        cursorShape: Qt.PointingHandCursor
+                    }
+                }
+
+                Text {
+                    width: parent.width
+                    text: "Test Value: " + dataController.testValue
+                    color: "white"
+                    font.pixelSize: ScreenTools.defaultFontPixelHeight * 1.2
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.Wrap
+                }
             }
 
-            MouseArea {
-                anchors.fill: parent
-                onClicked: {
-                    console.log("Clicked Cell 3")
+            Component {
+                id: dataCollectionDialogComponent
+                DataCollectionDialog {
+                    // _customSettings passed via createObject properties
                 }
             }
         }

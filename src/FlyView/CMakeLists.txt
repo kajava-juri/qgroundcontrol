@@ -74,3 +74,6 @@ qt_add_qml_module(FlyViewModule
         VirtualJoystick.qml
     NO_PLUGIN
 )
+
+# Link CustomModule to enable Custom.Widgets import
+target_link_libraries(FlyViewModule PRIVATE CustomModule)
