@@ -39,9 +39,9 @@ qt_add_qml_module(FlyViewModule
         FlyViewTopRightPanel.qml
         FlyViewVideo.qml
         FlyViewWidgetLayer.qml
-        FlyViewGrid.qml
-        GridMapCell.qml
-        GridState.qml
+        custom/FlyViewGrid.qml
+        custom/GridMapCell.qml
+        custom/GridState.qml
         GuidedActionConfirm.qml
         GuidedActionLand.qml
         GuidedActionPause.qml
