@@ -6,7 +6,6 @@ DECLARE_SETTINGGROUP(Custom, "Custom")
 }
 
 DECLARE_SETTINGSFACT(CustomSettings, httpUrl)
-DECLARE_SETTINGSFACT(CustomSettings, webSocketUrl)
 DECLARE_SETTINGSFACT(CustomSettings, folderName)
 DECLARE_SETTINGSFACT(CustomSettings, timeout)
 DECLARE_SETTINGSFACT(CustomSettings, enableVoxlLogging)

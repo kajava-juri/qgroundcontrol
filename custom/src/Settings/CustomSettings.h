@@ -18,7 +18,6 @@ public:
     DEFINE_SETTING_NAME_GROUP()
 
     DEFINE_SETTINGFACT(httpUrl)
-    DEFINE_SETTINGFACT(webSocketUrl)
     DEFINE_SETTINGFACT(folderName)
     DEFINE_SETTINGFACT(timeout)
     DEFINE_SETTINGFACT(enableVoxlLogging)

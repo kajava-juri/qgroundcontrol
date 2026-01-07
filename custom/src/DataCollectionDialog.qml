@@ -23,13 +23,6 @@ QGCPopupDialog {
             visible: fact !== null
         }
 
-        // LabelledFactTextField {
-        //     Layout.fillWidth: true
-        //     label: qsTr("WebSocket URL")
-        //     fact: _customSettings ? _customSettings.webSocketUrl : null
-        //     visible: fact !== null
-        // }
-
         LabelledFactTextField {
             Layout.fillWidth: true
             label: qsTr("Folder Name")

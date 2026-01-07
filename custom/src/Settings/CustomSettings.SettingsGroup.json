@@ -11,13 +11,6 @@
             "default":     "http://0.0.0.0:5000"
         },
         {
-            "name":      "webSocketUrl",
-            "shortDesc": "Data collection WebSocket Url",
-            "longDesc":  "WebSocket url address and port to communicate with the data collection script. Example: ws://0.0.0.0:5001",
-            "type":             "string",
-            "default":     "ws://0.0.0.0:5001"
-        },
-        {
             "name":      "folderName",
             "shortDesc": "Data folder name",
             "longDesc":  "Name of folder where collected data will be stored",
