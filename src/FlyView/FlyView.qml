@@ -226,7 +226,7 @@ Item {
 
         Text {
             anchors.centerIn: parent
-            text: _gridModeActive ? "Classic Mode" : "Overlay Mode"
+            text: _gridModeActive ? "Overlay Mode" : "Grid Mode"
             color: "black"
             font.pixelSize: 14
             font.bold: true

@@ -156,5 +156,8 @@ Qt*-linux*.tar.*
 sessions/
 CLAUDE.md
 
+# Development notes (not part of official docs)
+custom/dev-notes/
+
 # Pre-commit hooks
 .ruff_cache/

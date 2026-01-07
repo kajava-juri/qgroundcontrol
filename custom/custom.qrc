@@ -21,6 +21,7 @@
     <file alias="QGroundControl/FlyView/FlyViewCustomLayer.qml">src/FlyViewCustomLayer.qml</file>
     <file alias="QGroundControl/FlyView/FlyViewToolStripActionList.qml">src/FlyViewToolStripActionList.qml</file>
     <file alias="DataCollectionDialog.qml">src/DataCollectionDialog.qml</file>
+    <file alias="QGroundControl/Toolbar/DataCollectionIndicator.qml">src/DataCollectionIndicator.qml</file>
   </qresource>
   <qresource prefix="/Custom/qml">
     <file alias="CustomSettings.qml">src/CustomSettings.qml</file>

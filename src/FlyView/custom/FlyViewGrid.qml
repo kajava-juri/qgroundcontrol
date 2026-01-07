@@ -99,7 +99,7 @@ Item {
 
             Column {
                 anchors.centerIn: parent
-                width: Math.min(parent.width * 0.9, ScreenTools.defaultFontPixelWidth * 20)
+                width: Math.min(parent.width * 0.9, ScreenTools.defaultFontPixelWidth * 32)
                 spacing: ScreenTools.defaultFontPixelHeight * 0.75
 
                 QGCButton {

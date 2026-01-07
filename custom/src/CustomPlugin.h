@@ -89,6 +89,8 @@ public:
     void paletteOverride(const QString &colorName, QGCPalette::PaletteColorInfo_t &colorInfo) final;
     /// We override this so we can get access to QQmlApplicationEngine and use it to register our qml module
     QQmlApplicationEngine *createQmlApplicationEngine(QObject *parent) final;
+    /// Custom toolbar indicators that are always visible (app-level, not vehicle-specific)
+    const QVariantList &toolBarIndicators() final;
 
     CustomSettings *customSettings() const { return _customSettings; }
     QVariantList customSettingsPages() const { return _customSettingsList; }

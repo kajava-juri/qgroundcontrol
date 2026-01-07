@@ -23,6 +23,19 @@
 
 QGC_LOGGING_CATEGORY(CustomLog, "Custom.CustomPlugin")
 
+const QVariantList &CustomPlugin::toolBarIndicators()
+{
+    static QVariantList toolBarIndicatorList;
+    if (toolBarIndicatorList.isEmpty()) {
+        // Get base class indicators first (RTK GPS)
+        toolBarIndicatorList = QGCCorePlugin::toolBarIndicators();
+        // Add custom data collection indicator (always visible, vehicle-independent)
+        toolBarIndicatorList.append(QVariant::fromValue(QUrl::fromUserInput("qrc:/qml/QGroundControl/Toolbar/DataCollectionIndicator.qml")));
+    }
+    return toolBarIndicatorList;
+}
+
+
 Q_APPLICATION_STATIC(CustomPlugin, _customPluginInstance);
 
 CustomFlyViewOptions::CustomFlyViewOptions(CustomOptions* options, QObject* parent)

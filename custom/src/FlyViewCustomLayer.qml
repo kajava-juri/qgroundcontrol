@@ -42,7 +42,6 @@ Item {
     property string _messageTitle:          ""
     property string _messageText:           ""
     property real   _toolsMargin:           ScreenTools.defaultFontPixelWidth * 0.75
-    property var    _customSettings: QGroundControl.corePlugin.customSettings
     property var    _customVideoManager: QGroundControl.corePlugin.customVideoManager
     property bool   _rgbActive: false
     property bool   _rgbDecoding: false
