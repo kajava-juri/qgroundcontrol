@@ -21,6 +21,13 @@ DataCollectionController::DataCollectionController(QObject* parent)
     
     // Set initial vehicle if already connected
     _onActiveVehicleChanged(MultiVehicleManager::instance()->activeVehicle());
+
+    connect(this, &DataCollectionController::isCollectingChanged, this, [this]() {
+        if (!_isCollecting) {
+            // qCDebug(DataCollectionControllerLog) << "Data collection stopped - stopping periodic requests";
+            _stopPeriodicStreamInfoRequest();
+        }
+    });
 }
 
 void DataCollectionController::toggleRecording() {
@@ -49,18 +56,6 @@ void DataCollectionController::_sendHttpRequest(QString endpoint) {
     
     QNetworkRequest request(QUrl(QString(httpUrl + "/" + endpoint)));
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
-    
-/*
-        folder_name = req_data.get('folder', 'data')
-        timeout = int(req_data.get('timeout', 30))
-        enable_voxl_logging = bool(req_data.get('enable_voxl_logging', False))
-        enable_rtk_logging = bool(req_data.get('enable_rtk_logging', False))
-        # enable_qgc_streaming = bool(req_data.get('enable_qgc_streaming', False))
-        enable_qgc_streaming = True
-        qgc_ip = req_data.get('qgc_ip', '127.0.0.1')
-        qgc_port = int(req_data.get('qgc_port', 14550))
-        use_hardware_encoding = bool(req_data.get('use_hardware_encoding', False))
-*/
 
     // Create JSON body (empty object, Flask will use defaults)
     QJsonObject jsonObj;
@@ -103,6 +98,8 @@ void DataCollectionController::startRecording() {
         _sendHttpRequest("start");
         emit isCollectingChanged();
     }
+
+    _startPeriodicStreamInfoRequest();
 }
 
 void DataCollectionController::stopRecording() {
@@ -130,9 +127,6 @@ void DataCollectionController::_onActiveVehicleChanged(Vehicle* vehicle)
     
     if (_vehicle) {
         qCDebug(DataCollectionControllerLog) << "Connected to vehicle" << _vehicle->id();
-        
-        // Start periodic stream info requests
-        _startPeriodicStreamInfoRequest();
         
         // Connect to communication lost signal (like upstream VideoManager line 617)
         connect(_vehicle->vehicleLinkManager(), &VehicleLinkManager::communicationLostChanged, this, 
@@ -209,14 +203,15 @@ void DataCollectionController::_onActiveVehicleChanged(Vehicle* vehicle)
                 }
             }
         });
+        
+        qCDebug(DataCollectionControllerLog) << "Listening for VIDEO_STREAM_INFORMATION messages from component 103";
+        qCDebug(DataCollectionControllerLog) << "QGCCameraManager will request them automatically after CAMERA_INFORMATION is received";
     } else {
         qCDebug(DataCollectionControllerLog) << "No active vehicle";
     }
 }
 
-//-----------------------------------------------------------------------------
-void
-DataCollectionController::_startPeriodicStreamInfoRequest()
+void DataCollectionController::_startPeriodicStreamInfoRequest()
 {
     // Don't start if already running
     if (_streamInfoTimer.isActive()) {
@@ -241,9 +236,8 @@ DataCollectionController::_startPeriodicStreamInfoRequest()
     });
 }
 
-//-----------------------------------------------------------------------------
-void
-DataCollectionController::_stopPeriodicStreamInfoRequest()
+// //-----------------------------------------------------------------------------
+void DataCollectionController::_stopPeriodicStreamInfoRequest()
 {
     qCDebug(DataCollectionControllerLog) << "Stopping periodic stream info requests";
     
@@ -254,9 +248,8 @@ DataCollectionController::_stopPeriodicStreamInfoRequest()
     _streamInfoRetries = 0;
 }
 
-//-----------------------------------------------------------------------------
-void
-DataCollectionController::_requestStreamInfo()
+// //-----------------------------------------------------------------------------
+void DataCollectionController::_requestStreamInfo()
 {
     if (!_vehicle) {
         qCWarning(DataCollectionControllerLog) << "_requestStreamInfo: No active vehicle";
@@ -275,24 +268,22 @@ DataCollectionController::_requestStreamInfo()
             false,                                          // showError
             MAVLINK_MSG_ID_VIDEO_STREAM_INFORMATION,        // msgid (269)
             0);                                             // stream ID (0 = all streams)
-    } else {
-        qCDebug(DataCollectionControllerLog) << "  Sending MAV_CMD_REQUEST_VIDEO_STREAM_INFORMATION (legacy)";
-        _vehicle->sendMavCommand(
-            103,                             // target component
-            MAV_CMD_REQUEST_VIDEO_STREAM_INFORMATION,       // command id
-            false,                                          // showError
-            0);                                             // stream ID (0 = all streams)
-    }
+    } 
+    // else {
+    //     qCDebug(DataCollectionControllerLog) << "  Sending MAV_CMD_REQUEST_VIDEO_STREAM_INFORMATION (legacy)";
+    //     _vehicle->sendMavCommand(
+    //         103,                             // target component
+    //         MAV_CMD_REQUEST_VIDEO_STREAM_INFORMATION,       // command id
+    //         false,                                          // showError
+    //         0);                                             // stream ID (0 = all streams)
+    // }
     
     _streamInfoRetries++;  // Increment for next poll
 }
 
-//-----------------------------------------------------------------------------
-void
-DataCollectionController::_streamInfoTimeout()
+// //-----------------------------------------------------------------------------
+void DataCollectionController::_streamInfoTimeout()
 {
-    // Timer fired - this is just the periodic poll, not a timeout
-    // The timer is non-single-shot so it will keep firing every STREAM_INFO_POLL_INTERVAL_MS
     
     if (!_vehicle) {
         qCWarning(DataCollectionControllerLog) << "Periodic poll fired but no vehicle - stopping timer";

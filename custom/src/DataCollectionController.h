@@ -43,6 +43,7 @@ private:
     QString _videoStreamUri;
 
     void _sendHttpRequest(QString endpoint);
+    
     void _startPeriodicStreamInfoRequest();  // Start periodic requests
     void _stopPeriodicStreamInfoRequest();   // Stop periodic requests
     
