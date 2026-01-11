@@ -79,11 +79,13 @@ Item {
         bottomEdgeLeftInset:    _pipView.bottomEdgeLeftInset
     }
 
+    DataCollectionController {
+        id: dataCollectionController
+    }
+
     Item {
         id:                 mapHolder
         anchors.fill:       parent
-
-        property alias flyViewGrid: gridView  // Expose gridView as a property
 
         FlyViewMap {
             id:                     mapControl
@@ -121,15 +123,20 @@ Item {
         }
 
         // New Grid View
-        FlyViewGrid {
+        Loader {
             id:             gridView
             anchors.fill:   parent
             anchors.top: parent.top
             anchors.topMargin: toolbar.height
-            z:              QGroundControl.zOrderWidgets
-            visible:        _gridModeActive
-            planMasterController:  _planController
+            sourceComponent: FlyViewGrid {
+                z:              QGroundControl.zOrderWidgets
+                visible:        _gridModeActive
+                planMasterController:  _planController
+                dataController: dataCollectionController
+            }
+
         }
+        
 
         FlyViewWidgetLayer {
             id:                     widgetLayer
@@ -146,14 +153,17 @@ Item {
             isViewer3DOpen:         viewer3DWindow.isOpen
         }
 
-        FlyViewCustomLayer {
+        Loader {
             id:                 customOverlay
             anchors.fill:       widgetLayer
-            z:                  _fullItemZorder + 2
-            parentToolInsets:   widgetLayer.totalToolInsets
-            mapControl:         _mapControl
-            gridModeActive:     _gridModeActive  // Pass grid mode state
-            visible:            !QGroundControl.videoManager.fullScreen && !_gridModeActive  // Hide in grid mode
+            sourceComponent: FlyViewCustomLayer {
+                z:                  _fullItemZorder + 2
+                parentToolInsets:   widgetLayer.totalToolInsets
+                mapControl:         _mapControl
+                gridModeActive:     _gridModeActive  // Pass grid mode state
+                visible:            !QGroundControl.videoManager.fullScreen && !_gridModeActive  // Hide in grid mode
+                dataController:   dataCollectionController
+            }
         }
 
         // Development tool for visualizing the insets for a paticular layer, show if needed
@@ -236,7 +246,9 @@ Item {
             anchors.fill: parent
             onClicked: {
                 _gridModeActive = !_gridModeActive
-                gridView.gridState.state = _gridModeActive ? "grid" : "hidden"
+                if (gridView.item) {
+                    gridView.item.gridState.state = _gridModeActive ? "grid" : "hidden"
+                }
 
                 // Give Loaders time to create/destroy widgets, then reinitialize CustomVideoManager
                 Qt.callLater(function() {

@@ -108,22 +108,24 @@ void CustomVideoManager::reinitializeWidgets()
             _streams[i].sink = nullptr;
         }
 
-        // Update widget reference
-        if (_streams[i].receiver) {
-            qCWarning(CustomVideoManagerLog) << "Updating widget for stream" << i;
-            _streams[i].receiver->setWidget(newWidget);
-        }
+        _setupReceiver(i, newWidget);
 
-        // Create new sink
-        qCWarning(CustomVideoManagerLog) << "Creating new sink for stream" << i;
-        void *sink = QGCCorePlugin::instance()->createVideoSink(newWidget, _streams[i].receiver);
-        if (!sink) {
-            qCCritical(CustomVideoManagerLog) << "Failed to create sink for stream" << i;
-        } else {
-            qCWarning(CustomVideoManagerLog) << "New sink created for stream" << i;
-            _streams[i].sink = sink;
-            _streams[i].receiver->setSink(sink);
-        }
+        // // Update widget reference
+        // if (_streams[i].receiver) {
+        //     qCWarning(CustomVideoManagerLog) << "Updating widget for stream" << i;
+        //     _streams[i].receiver->setWidget(newWidget);
+        // }
+
+        // // Create new sink
+        // qCWarning(CustomVideoManagerLog) << "Creating new sink for stream" << i;
+        // void *sink = QGCCorePlugin::instance()->createVideoSink(newWidget, _streams[i].receiver);
+        // if (!sink) {
+        //     qCCritical(CustomVideoManagerLog) << "Failed to create sink for stream" << i;
+        // } else {
+        //     qCWarning(CustomVideoManagerLog) << "New sink created for stream" << i;
+        //     _streams[i].sink = sink;
+        //     _streams[i].receiver->setSink(sink);
+        // }
 
         // Restart decoding if it was active
         if (wasDecoding && !_streams[i].uri.isEmpty()) {

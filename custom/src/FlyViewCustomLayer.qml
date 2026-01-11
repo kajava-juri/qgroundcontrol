@@ -26,6 +26,8 @@ Item {
     property var mapControl:           _mapControl
     property bool gridModeActive:   false               // Whether grid mode is active
 
+    property var dataController: null 
+
     readonly property string noGPS:         qsTr("NO GPS")
     readonly property real   indicatorValueWidth:   ScreenTools.defaultFontPixelWidth * 7
 
@@ -98,9 +100,6 @@ Item {
         return hours+':'+minutes+':'+seconds;
     }
 
-    DataCollectionController {
-        id: dataController
-    }
 
     // Dual video streams for data collection
     // Hidden in grid mode as video streams are shown in grid cells

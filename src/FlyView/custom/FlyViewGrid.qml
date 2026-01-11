@@ -27,14 +27,12 @@ Item {
     // Expose the grid state to external access
     property alias gridState: _gridState
 
+    property var dataController: null 
+
     // Grid state manager
     GridState {
         id: _gridState
         gridView: root  // Set reference to this GridView
-    }
-
-    DataCollectionController {
-        id: dataController
     }
 
     // Simple test grid - 4 cells
