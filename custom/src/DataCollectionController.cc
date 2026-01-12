@@ -97,9 +97,13 @@ void DataCollectionController::startRecording() {
         _isCollecting = true;
         _sendHttpRequest("start");
         emit isCollectingChanged();
+        
+        // Start periodic stream info requests only if vehicle already connected
+        if (_vehicle) {
+            _startPeriodicStreamInfoRequest();
+        }
+        // Otherwise, _onActiveVehicleChanged will start it when vehicle connects
     }
-
-    _startPeriodicStreamInfoRequest();
 }
 
 void DataCollectionController::stopRecording() {
@@ -127,6 +131,12 @@ void DataCollectionController::_onActiveVehicleChanged(Vehicle* vehicle)
     
     if (_vehicle) {
         qCDebug(DataCollectionControllerLog) << "Connected to vehicle" << _vehicle->id();
+        
+        // Start periodic stream info requests if recording is active
+        if (_isCollecting) {
+            qCDebug(DataCollectionControllerLog) << "Recording active - starting periodic stream info requests";
+            _startPeriodicStreamInfoRequest();
+        }
         
         // Connect to communication lost signal (like upstream VideoManager line 617)
         connect(_vehicle->vehicleLinkManager(), &VehicleLinkManager::communicationLostChanged, this, 
@@ -204,8 +214,6 @@ void DataCollectionController::_onActiveVehicleChanged(Vehicle* vehicle)
             }
         });
         
-        qCDebug(DataCollectionControllerLog) << "Listening for VIDEO_STREAM_INFORMATION messages from component 103";
-        qCDebug(DataCollectionControllerLog) << "QGCCameraManager will request them automatically after CAMERA_INFORMATION is received";
     } else {
         qCDebug(DataCollectionControllerLog) << "No active vehicle";
     }
