@@ -35,16 +35,28 @@ Item {
         gridView: root  // Set reference to this GridView
     }
 
-    // Simple test grid - 4 cells
+    // Grid with 5 cells (2 columns, 3 rows with one cell spanning 2 columns)
     GridLayout {
         id: gridContainer
         anchors.fill: parent
         anchors.top: parent.top
-        columns: 2  // 2 columns = 2x2 grid
+        columns: 2  // 2 columns
         columnSpacing: 4
         rowSpacing: 4
 
-        // Cell 0: Red
+        // Cell 0: QGC Main Camera Stream (spans both columns)
+        // Only create when grid is visible
+        Loader {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            Layout.columnSpan: 2  // Span both columns for prominent display
+            active: root.visible
+            sourceComponent: FlightDisplayViewVideo {
+                useSmallFont: true
+            }
+        }
+
+        // Cell 1: Map
         GridMapCell {
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -52,16 +64,9 @@ Item {
             border.color: "white"
             border.width: 2
             planController: root.planMasterController
-
-            // MouseArea {
-            //     anchors.fill: parent
-            //     onClicked: {
-            //         console.log("Clicked Cell 0")
-            //     }
-            // }
         }
 
-        // Cell 1: RGB Video Stream
+        // Cell 2: RGB Video Stream
         // Only create when grid is visible to avoid conflicts with CustomLayer
         Loader {
             Layout.fillWidth: true
@@ -74,7 +79,7 @@ Item {
             }
         }
 
-        // Cell 2: Thermal Video Stream
+        // Cell 3: Thermal Video Stream
         // Only create when grid is visible to avoid conflicts with CustomLayer
         Loader {
             Layout.fillWidth: true
@@ -87,7 +92,7 @@ Item {
             }
         }
 
-        // Cell 3: Data Collection Controls
+        // Cell 4: Data Collection Controls
         Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
