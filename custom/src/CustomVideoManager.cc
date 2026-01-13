@@ -95,6 +95,8 @@ void CustomVideoManager::reinitializeWidgets()
         }
 
         if (!_streams[i].receiver) {
+            // First-time initialization - receiver hasn't been created yet
+            // This only happens during app startup, not during normal mode transitions
             qCWarning(CustomVideoManagerLog) << "No receiver for stream" << i << "- initializing from scratch";
             _setupReceiver(i, newWidget);
             continue;

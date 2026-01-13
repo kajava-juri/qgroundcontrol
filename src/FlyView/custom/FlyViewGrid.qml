@@ -45,7 +45,9 @@ Item {
         rowSpacing: 4
 
         // Cell 0: QGC Main Camera Stream (spans both columns)
-        // Only create when grid is visible
+        // Only create when grid is visible to avoid conflicts with FlyViewVideo
+        // QGC's VideoManager supports multiple video outputs sharing the same stream
+        // Loaders ensure only one FlightDisplayViewVideo is active at a time
         Loader {
             Layout.fillWidth: true
             Layout.fillHeight: true
