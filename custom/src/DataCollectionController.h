@@ -6,6 +6,8 @@
 #include <QtNetwork/QNetworkAccessManager>
 #include "Vehicle.h"
 
+#define DATA_COLLECTION_COMPONENT_ID 25
+
 class DataCollectionController : public QObject
 {
     Q_OBJECT

@@ -85,7 +85,7 @@ void CustomVideoManager::reinitializeWidgets()
 
     qCWarning(CustomVideoManagerLog) << "Found widgets - RGB:" << rgbWidget << "Thermal:" << thermalWidget;
 
-    // For each stream, update the widget reference and recreate sink if needed
+    // For each stream, update the widget reference and recreate sink without stopping receiver
     for (int i = 0; i < STREAM_COUNT; i++) {
         QQuickItem* newWidget = (i == STREAM_RGB) ? rgbWidget : thermalWidget;
 
@@ -94,9 +94,17 @@ void CustomVideoManager::reinitializeWidgets()
             continue;
         }
 
-        // Stop decoding if currently active
+        if (!_streams[i].receiver) {
+            qCWarning(CustomVideoManagerLog) << "No receiver for stream" << i << "- setting up new receiver";
+            _setupReceiver(i, newWidget);
+            continue;
+        }
+
         bool wasDecoding = _streams[i].decoding;
-        if (_streams[i].receiver && _streams[i].receiver->started()) {
+
+        qCWarning(CustomVideoManagerLog) << "Stream" << i << "state before reinit: wasDecoding=" << wasDecoding;
+
+        if (wasDecoding) {
             qCWarning(CustomVideoManagerLog) << "Stopping stream" << i << "before widget change";
             _streams[i].receiver->stopDecoding();
         }
@@ -108,29 +116,67 @@ void CustomVideoManager::reinitializeWidgets()
             _streams[i].sink = nullptr;
         }
 
-        _setupReceiver(i, newWidget);
+        // Update widget reference
+        qCWarning(CustomVideoManagerLog) << "Updating widget for stream" << i;
+        _streams[i].receiver->setWidget(newWidget);
 
-        // // Update widget reference
-        // if (_streams[i].receiver) {
-        //     qCWarning(CustomVideoManagerLog) << "Updating widget for stream" << i;
-        //     _streams[i].receiver->setWidget(newWidget);
-        // }
+        // Create new sink
+        qCWarning(CustomVideoManagerLog) << "Creating new sink for stream" << i;
+        void *sink = QGCCorePlugin::instance()->createVideoSink(newWidget, _streams[i].receiver);
+        if (!sink) {
+            qCCritical(CustomVideoManagerLog) << "Failed to create sink for stream" << i;
+        } else {
+            qCWarning(CustomVideoManagerLog) << "New sink created for stream" << i;
+            _streams[i].sink = sink;
+            _streams[i].receiver->setSink(sink);
+        }
 
-        // // Create new sink
-        // qCWarning(CustomVideoManagerLog) << "Creating new sink for stream" << i;
-        // void *sink = QGCCorePlugin::instance()->createVideoSink(newWidget, _streams[i].receiver);
-        // if (!sink) {
-        //     qCCritical(CustomVideoManagerLog) << "Failed to create sink for stream" << i;
-        // } else {
-        //     qCWarning(CustomVideoManagerLog) << "New sink created for stream" << i;
-        //     _streams[i].sink = sink;
-        //     _streams[i].receiver->setSink(sink);
-        // }
-
-        // Restart decoding if it was active
-        if (wasDecoding && !_streams[i].uri.isEmpty()) {
-            qCWarning(CustomVideoManagerLog) << "Restarting stream" << i << "after widget change";
-            _restartVideo(i);
+        // If stream was decoding, restart it after GStreamer finishes stopping
+        if (wasDecoding && _streams[i].sink) {
+            qCWarning(CustomVideoManagerLog) << "Stream" << i 
+                                              << "needs restart - setting up deferred check";
+            
+            // Use QTimer::singleShot to check on next event loop iteration
+            // This ensures all pending decodingChanged signals have been processed
+            QTimer::singleShot(0, this, [this, i]() {
+                if (!_streams[i].sink) {
+                    qCWarning(CustomVideoManagerLog) << "Stream" << i 
+                                                      << "sink gone, cannot restart";
+                    return;
+                }
+                
+                if (!_streams[i].decoding) {
+                    // Already stopped, restart now
+                    qCWarning(CustomVideoManagerLog) << "Stream" << i 
+                                                      << "already stopped, restarting immediately";
+                    _streams[i].receiver->startDecoding(_streams[i].sink);
+                } else {
+                    // Still decoding, wait for signal
+                    qCWarning(CustomVideoManagerLog) << "Stream" << i 
+                                                      << "still decoding - waiting for stop signal";
+                    
+                    QMetaObject::Connection* conn = new QMetaObject::Connection();
+                    *conn = connect(_streams[i].receiver, &VideoReceiver::decodingChanged, this, 
+                        [this, i, conn](bool decoding) {
+                            qCWarning(CustomVideoManagerLog) << "Stream" << i 
+                                                              << "decodingChanged lambda fired: decoding=" 
+                                                              << decoding;
+                            
+                            if (!decoding && _streams[i].sink) {
+                                qCWarning(CustomVideoManagerLog) << "Stream" << i 
+                                                                  << "decoding stopped, restarting now";
+                                _streams[i].receiver->startDecoding(_streams[i].sink);
+                                
+                                QObject::disconnect(*conn);
+                                delete conn;
+                            }
+                    });
+                }
+            });
+        } else {
+            qCWarning(CustomVideoManagerLog) << "Stream" << i 
+                                              << "will not restart: wasDecoding=" << wasDecoding 
+                                              << "sink=" << _streams[i].sink;
         }
     }
 

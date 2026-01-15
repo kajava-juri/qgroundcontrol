@@ -271,7 +271,7 @@ void DataCollectionController::_requestStreamInfo()
     if (_streamInfoRetries % 2 == 0) {
         qCDebug(DataCollectionControllerLog) << "  Sending REQUEST_MESSAGE:MAVLINK_MSG_ID_VIDEO_STREAM_INFORMATION";
         _vehicle->sendMavCommand(
-            103,                             // target component
+            DATA_COLLECTION_COMPONENT_ID,                             // target component
             MAV_CMD_REQUEST_MESSAGE,                        // command id
             false,                                          // showError
             MAVLINK_MSG_ID_VIDEO_STREAM_INFORMATION,        // msgid (269)

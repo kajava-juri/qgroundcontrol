@@ -27,7 +27,19 @@ Item {
     // Expose the grid state to external access
     property alias gridState: _gridState
 
-    property var dataController: null 
+    property var dataController: null
+
+    // Access to CustomVideoManager - adjust based on how it's exposed in your CustomPlugin
+    property var _customVideoManager: QGroundControl.corePlugin.customVideoManager
+    
+    // Stream properties - bound to CustomVideoManager
+    property string _rgbUri: _customVideoManager ? _customVideoManager.getStreamUri(0) : ""
+    property bool _rgbActive: _customVideoManager ? _customVideoManager.isStreamActive(0) : false
+    property bool _rgbDecoding: _customVideoManager ? _customVideoManager.isStreamDecoding(0) : false
+    
+    property string _thermalUri: _customVideoManager ? _customVideoManager.getStreamUri(1) : ""
+    property bool _thermalActive: _customVideoManager ? _customVideoManager.isStreamActive(1) : false
+    property bool _thermalDecoding: _customVideoManager ? _customVideoManager.isStreamDecoding(1) : false 
 
     // Grid state manager
     GridState {
@@ -35,12 +47,32 @@ Item {
         gridView: root  // Set reference to this GridView
     }
 
+    // Connect to CustomVideoManager signals for live updates
+    Connections {
+        target: _customVideoManager
+        
+        function onStreamUriChanged(streamIndex, uri) {
+            if (streamIndex === 0) _rgbUri = uri
+            else if (streamIndex === 1) _thermalUri = uri
+        }
+        
+        function onStreamStateChanged(streamIndex, active) {
+            if (streamIndex === 0) _rgbActive = active
+            else if (streamIndex === 1) _thermalActive = active
+        }
+        
+        function onStreamDecodingChanged(streamIndex, decoding) {
+            if (streamIndex === 0) _rgbDecoding = decoding
+            else if (streamIndex === 1) _thermalDecoding = decoding
+        }
+    }
+
     // Simple test grid - 4 cells
     GridLayout {
         id: gridContainer
         anchors.fill: parent
         anchors.top: parent.top
-        columns: 2  // 2 columns = 2x2 grid
+        columns: 3  // 3 columns = 3x2 grid
         columnSpacing: 4
         rowSpacing: 4
 
@@ -61,7 +93,20 @@ Item {
             // }
         }
 
-        // Cell 1: RGB Video Stream
+        // Cell 1: Main Drone Camera (spans 2 columns)
+        Loader {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            Layout.columnSpan: 2  // Span both columns for prominent display
+            active: root.visible
+            sourceComponent: CustomVideoStream {
+                streamObjectName: "customMainVideo"
+                streamLabel: "Main Camera"
+                borderColor: "yellow"
+            }
+        }
+
+        // Cell 2: RGB Video Stream
         // Only create when grid is visible to avoid conflicts with CustomLayer
         Loader {
             Layout.fillWidth: true
@@ -74,7 +119,7 @@ Item {
             }
         }
 
-        // Cell 2: Thermal Video Stream
+        // Cell 3: Thermal Video Stream
         // Only create when grid is visible to avoid conflicts with CustomLayer
         Loader {
             Layout.fillWidth: true
@@ -87,58 +132,169 @@ Item {
             }
         }
 
-        // Cell 3: Data Collection Controls
+        // Cell 4: Data Collection Controls
         Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            color: "#2b2d30"  // Dark background instead of yellow
+            color: "#2b2d30"
             border.color: "black"
             border.width: 2
 
-            Column {
-                anchors.centerIn: parent
-                width: Math.min(parent.width * 0.9, ScreenTools.defaultFontPixelWidth * 32)
-                spacing: ScreenTools.defaultFontPixelHeight * 0.75
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: ScreenTools.defaultFontPixelHeight * 0.5
+                spacing: ScreenTools.defaultFontPixelHeight * 0.5
 
-                QGCButton {
-                    width: parent.width
-                    text: qsTr("Data Collection Settings")
-                    onClicked: {
-                        var dialog = dataCollectionDialogComponent.createObject(mainWindow, {
-                            "_customSettings": QGroundControl.corePlugin.customSettings
-                        })
-                        dialog.open()
+                // Button row
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: ScreenTools.defaultFontPixelHeight * 0.5
+
+                    QGCButton {
+                        Layout.fillWidth: true
+                        Layout.preferredWidth: parent.width / 2
+                        text: qsTr("Settings")
+                        onClicked: {
+                            var dialog = dataCollectionDialogComponent.createObject(mainWindow, {
+                                "_customSettings": QGroundControl.corePlugin.customSettings
+                            })
+                            dialog.open()
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.preferredWidth: parent.width / 2
+                        Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 2
+                        color: dataController.isCollecting ? "#e03131" : "#12b886"
+                        radius: 4
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: dataController.isCollecting ? "■ Stop" : "● Start"
+                            color: "white"
+                            font.pixelSize: ScreenTools.defaultFontPixelHeight
+                            font.bold: true
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: dataController.toggleRecording()
+                            cursorShape: Qt.PointingHandCursor
+                        }
                     }
                 }
 
-                Rectangle {
-                    width: parent.width
-                    height: ScreenTools.defaultFontPixelHeight * 3
-                    color: dataController.isCollecting ? "#e03131" : "#12b886"
-                    radius: 4
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: dataController.isCollecting ? "Stop Recording" : "Start Recording"
-                        color: "white"
-                        font.pixelSize: ScreenTools.defaultFontPixelHeight
-                        font.bold: true
-                    }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        onClicked: dataController.toggleRecording()
-                        cursorShape: Qt.PointingHandCursor
-                    }
+                // Data source status header
+                QGCLabel {
+                    text: "Stream Status" + (_customVideoManager ? " ✓" : " ✗")
+                    color: _customVideoManager ? "cyan" : "red"
+                    font.bold: true
                 }
 
-                Text {
-                    width: parent.width
-                    text: "Test Value: " + dataController.testValue
-                    color: "white"
-                    font.pixelSize: ScreenTools.defaultFontPixelHeight * 1.2
-                    horizontalAlignment: Text.AlignHCenter
-                    wrapMode: Text.Wrap
+                // Scrollable data source status area
+                ScrollView {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    contentWidth: availableWidth
+                    clip: true
+                    
+                    ColumnLayout {
+                        width: parent.width
+                        spacing: ScreenTools.defaultFontPixelHeight * 0.5
+
+                        // RGB Stream
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 3
+                            color: "#1e1e1e"
+                            radius: 4
+                            border.color: _rgbDecoding ? "green" : "gray"
+                            border.width: 2
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.margins: 4
+                                spacing: 0
+
+                                QGCLabel {
+                                    text: "RGB"
+                                    color: "white"
+                                    font.bold: true
+                                    font.pixelSize: ScreenTools.smallFontPointSize
+                                }
+                                
+                                QGCLabel {
+                                    Layout.fillWidth: true
+                                    text: _rgbUri ? _rgbUri : "(no stream)"
+                                    color: "gray"
+                                    font.pixelSize: ScreenTools.smallFontPointSize * 0.7
+                                    elide: Text.ElideMiddle
+                                    wrapMode: Text.NoWrap
+                                }
+
+                                Row {
+                                    spacing: 4
+                                    QGCLabel {
+                                        text: "A:" + (_rgbActive ? "✓" : "✗")
+                                        color: _rgbActive ? "lime" : "red"
+                                        font.pixelSize: ScreenTools.smallFontPointSize * 0.9
+                                    }
+                                    QGCLabel {
+                                        text: "D:" + (_rgbDecoding ? "✓" : "✗")
+                                        color: _rgbDecoding ? "lime" : "red"
+                                        font.pixelSize: ScreenTools.smallFontPointSize * 0.9
+                                    }
+                                }
+                            }
+                        }
+
+                        // Thermal Stream
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 3
+                            color: "#1e1e1e"
+                            radius: 4
+                            border.color: _thermalDecoding ? "#e03131" : "gray"
+                            border.width: 2
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.margins: 4
+                                spacing: 2
+
+                                QGCLabel {
+                                    text: "Thermal"
+                                    color: "white"
+                                    font.bold: true
+                                    font.pixelSize: ScreenTools.smallFontPointSize
+                                }
+                                
+                                QGCLabel {
+                                    Layout.fillWidth: true
+                                    text: _thermalUri ? _thermalUri : "(no stream)"
+                                    color: "gray"
+                                    font.pixelSize: ScreenTools.smallFontPointSize * 0.7
+                                    elide: Text.ElideMiddle
+                                    wrapMode: Text.NoWrap
+                                }
+
+                                Row {
+                                    spacing: 4
+                                    QGCLabel {
+                                        text: "A:" + (_thermalActive ? "✓" : "✗")
+                                        color: _thermalActive ? "lime" : "red"
+                                        font.pixelSize: ScreenTools.smallFontPointSize * 0.9
+                                    }
+                                    QGCLabel {
+                                        text: "D:" + (_thermalDecoding ? "✓" : "✗")
+                                        color: _thermalDecoding ? "lime" : "red"
+                                        font.pixelSize: ScreenTools.smallFontPointSize * 0.9
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
 

@@ -153,18 +153,17 @@ Item {
             isViewer3DOpen:         viewer3DWindow.isOpen
         }
 
-        Loader {
+        FlyViewCustomLayer {
             id:                 customOverlay
             anchors.fill:       widgetLayer
-            sourceComponent: FlyViewCustomLayer {
-                z:                  _fullItemZorder + 2
-                parentToolInsets:   widgetLayer.totalToolInsets
-                mapControl:         _mapControl
-                gridModeActive:     _gridModeActive  // Pass grid mode state
-                visible:            !QGroundControl.videoManager.fullScreen && !_gridModeActive  // Hide in grid mode
-                dataController:   dataCollectionController
-            }
+            z:                  _fullItemZorder + 2
+            parentToolInsets:   widgetLayer.totalToolInsets
+            mapControl:         _mapControl
+            gridModeActive:     _gridModeActive  // Pass grid mode state
+            visible:            !QGroundControl.videoManager.fullScreen && !_gridModeActive  // Hide in grid mode
+            dataController:   dataCollectionController
         }
+        
 
         // Development tool for visualizing the insets for a paticular layer, show if needed
         FlyViewInsetViewer {
@@ -246,6 +245,8 @@ Item {
             anchors.fill: parent
             onClicked: {
                 _gridModeActive = !_gridModeActive
+                // debug print
+                console.log("Grid Mode Active:", _gridModeActive)
                 if (gridView.item) {
                     gridView.item.gridState.state = _gridModeActive ? "grid" : "hidden"
                 }
