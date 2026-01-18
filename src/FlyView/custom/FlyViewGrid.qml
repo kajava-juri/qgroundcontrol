@@ -28,46 +28,15 @@ Item {
     property alias gridState: _gridState
 
     property var dataController: null
-
-    // Access to CustomVideoManager - adjust based on how it's exposed in your CustomPlugin
     property var _customVideoManager: QGroundControl.corePlugin.customVideoManager
-    
-    // Stream properties - bound to CustomVideoManager
-    property string _rgbUri: _customVideoManager ? _customVideoManager.getStreamUri(0) : ""
-    property bool _rgbActive: _customVideoManager ? _customVideoManager.isStreamActive(0) : false
-    property bool _rgbDecoding: _customVideoManager ? _customVideoManager.isStreamDecoding(0) : false
-    
-    property string _thermalUri: _customVideoManager ? _customVideoManager.getStreamUri(1) : ""
-    property bool _thermalActive: _customVideoManager ? _customVideoManager.isStreamActive(1) : false
-    property bool _thermalDecoding: _customVideoManager ? _customVideoManager.isStreamDecoding(1) : false 
+    property var _activeVehicle: QGroundControl.multiVehicleManager.activeVehicle 
 
     // Grid state manager
     GridState {
         id: _gridState
-        gridView: root  // Set reference to this GridView
+        gridView: root
     }
 
-    // Connect to CustomVideoManager signals for live updates
-    Connections {
-        target: _customVideoManager
-        
-        function onStreamUriChanged(streamIndex, uri) {
-            if (streamIndex === 0) _rgbUri = uri
-            else if (streamIndex === 1) _thermalUri = uri
-        }
-        
-        function onStreamStateChanged(streamIndex, active) {
-            if (streamIndex === 0) _rgbActive = active
-            else if (streamIndex === 1) _thermalActive = active
-        }
-        
-        function onStreamDecodingChanged(streamIndex, decoding) {
-            if (streamIndex === 0) _rgbDecoding = decoding
-            else if (streamIndex === 1) _thermalDecoding = decoding
-        }
-    }
-
-    // Simple test grid - 4 cells
     GridLayout {
         id: gridContainer
         anchors.fill: parent
@@ -76,38 +45,162 @@ Item {
         columnSpacing: 4
         rowSpacing: 4
 
-        // Cell 0: Red
+        // Row 1: Map, Attitude, Telemetry
         GridMapCell {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            color: "red"
-            border.color: "white"
+            color: "transparent"
+            border.color: "cyan"
             border.width: 2
             planController: root.planMasterController
-
-            // MouseArea {
-            //     anchors.fill: parent
-            //     onClicked: {
-            //         console.log("Clicked Cell 0")
-            //     }
-            // }
         }
 
-        // Cell 1: Main Drone Camera (spans 2 columns)
-        Loader {
+        Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.columnSpan: 2  // Span both columns for prominent display
-            active: root.visible
-            sourceComponent: CustomVideoStream {
-                streamObjectName: "customMainVideo"
-                streamLabel: "Main Camera"
-                borderColor: "yellow"
+            color: "#1e1e1e"
+            border.color: "white"
+            border.width: 2
+
+            property real _heading: _activeVehicle ? _activeVehicle.heading.rawValue : 0
+
+            CustomAttitudeWidget {
+                anchors.centerIn: parent
+                size: Math.min(parent.width, parent.height) * 0.75
+                vehicle: _activeVehicle
+                showHeading:        false
+            }
+
+            // Compass needle overlay
+            Image {
+                id: headingNeedle
+                anchors.centerIn: parent
+                height: Math.min(parent.width, parent.height) * 0.5
+                width: height
+                source: "/custom/img/compass_needle.svg"
+                fillMode: Image.PreserveAspectFit
+                sourceSize.height: height
+                opacity: 0.7
+                transform: Rotation {
+                    origin.x: headingNeedle.width / 2
+                    origin.y: headingNeedle.height / 2
+                    angle: _heading
+                }
+            }
+
+            // Heading label in top-right corner
+            Rectangle {
+                anchors.top: parent.top
+                anchors.right: parent.right
+                anchors.margins: 4
+                width: headingLabel.contentWidth + ScreenTools.defaultFontPixelWidth
+                height: headingLabel.contentHeight + ScreenTools.defaultFontPixelHeight * 0.5
+                radius: 4
+                color: qgcPal.windowShade
+                border.color: "cyan"
+                border.width: 1
+
+                QGCLabel {
+                    id: headingLabel
+                    anchors.centerIn: parent
+                    text: _heading.toFixed(0) + "°"
+                    color: "cyan"
+                    font.pointSize: ScreenTools.smallFontPointSize
+                    font.bold: true
+                }
             }
         }
 
-        // Cell 2: RGB Video Stream
-        // Only create when grid is visible to avoid conflicts with CustomLayer
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            color: "#2b2d30"
+            border.color: "white"
+            border.width: 2
+
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: ScreenTools.defaultFontPixelHeight * 0.5
+                spacing: ScreenTools.defaultFontPixelHeight * 0.3
+
+                QGCLabel {
+                    text: "Flight Data"
+                    font.bold: true
+                    color: "cyan"
+                }
+
+                Rectangle { Layout.fillWidth: true; height: 1; color: "gray" }
+
+                // Altitude
+                Row {
+                    spacing: ScreenTools.defaultFontPixelWidth
+                    QGCLabel {
+                        text: "ALT:"
+                        color: "white"
+                        font.pixelSize: ScreenTools.smallFontPointSize
+                    }
+                    QGCLabel {
+                        text: _activeVehicle ? _activeVehicle.altitudeRelative.valueString + " " + _activeVehicle.altitudeRelative.units : "---"
+                        color: "lime"
+                        font.pixelSize: ScreenTools.smallFontPointSize
+                        font.bold: true
+                    }
+                }
+
+                // Ground speed
+                Row {
+                    spacing: ScreenTools.defaultFontPixelWidth
+                    QGCLabel {
+                        text: "GS:"
+                        color: "white"
+                        font.pixelSize: ScreenTools.smallFontPointSize
+                    }
+                    QGCLabel {
+                        text: _activeVehicle ? _activeVehicle.groundSpeed.valueString + " " + _activeVehicle.groundSpeed.units : "---"
+                        color: "lime"
+                        font.pixelSize: ScreenTools.smallFontPointSize
+                        font.bold: true
+                    }
+                }
+
+                // Heading
+                Row {
+                    spacing: ScreenTools.defaultFontPixelWidth
+                    QGCLabel {
+                        text: "HDG:"
+                        color: "white"
+                        font.pixelSize: ScreenTools.smallFontPointSize
+                    }
+                    QGCLabel {
+                        text: _activeVehicle ? _activeVehicle.heading.valueString + "°" : "---"
+                        color: "lime"
+                        font.pixelSize: ScreenTools.smallFontPointSize
+                        font.bold: true
+                    }
+                }
+
+                // GPS
+                Row {
+                    spacing: ScreenTools.defaultFontPixelWidth
+                    QGCLabel {
+                        text: "GPS:"
+                        color: "white"
+                        font.pixelSize: ScreenTools.smallFontPointSize
+                    }
+                    QGCLabel {
+                        text: _activeVehicle && _activeVehicle.gps.count.rawValue > 0 ? 
+                              _activeVehicle.gps.count.valueString + " sats" : "No GPS"
+                        color: _activeVehicle && _activeVehicle.gps.count.rawValue >= 6 ? "lime" : "red"
+                        font.pixelSize: ScreenTools.smallFontPointSize
+                        font.bold: true
+                    }
+                }
+
+                Item { Layout.fillHeight: true }
+            }
+        }
+
+        // Row 2: RGB Camera, Thermal Camera, Controls
         Loader {
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -185,117 +278,67 @@ Item {
                     }
                 }
 
-                // Data source status header
                 QGCLabel {
-                    text: "Stream Status" + (_customVideoManager ? " ✓" : " ✗")
-                    color: _customVideoManager ? "cyan" : "red"
+                    text: "Stream Status"
+                    color: "cyan"
                     font.bold: true
                 }
 
-                // Scrollable data source status area
-                ScrollView {
+                // Compact stream status
+                Column {
                     Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    contentWidth: availableWidth
-                    clip: true
-                    
-                    ColumnLayout {
+                    spacing: 4
+
+                    // RGB
+                    Rectangle {
                         width: parent.width
-                        spacing: ScreenTools.defaultFontPixelHeight * 0.5
+                        height: ScreenTools.defaultFontPixelHeight * 2
+                        color: "#1e1e1e"
+                        radius: 4
+                        border.color: _customVideoManager && _customVideoManager.isStreamDecoding(0) ? "green" : "gray"
+                        border.width: 2
 
-                        // RGB Stream
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 3
-                            color: "#1e1e1e"
-                            radius: 4
-                            border.color: _rgbDecoding ? "green" : "gray"
-                            border.width: 2
-
-                            ColumnLayout {
-                                anchors.fill: parent
-                                anchors.margins: 4
-                                spacing: 0
-
-                                QGCLabel {
-                                    text: "RGB"
-                                    color: "white"
-                                    font.bold: true
-                                    font.pixelSize: ScreenTools.smallFontPointSize
-                                }
-                                
-                                QGCLabel {
-                                    Layout.fillWidth: true
-                                    text: _rgbUri ? _rgbUri : "(no stream)"
-                                    color: "gray"
-                                    font.pixelSize: ScreenTools.smallFontPointSize * 0.7
-                                    elide: Text.ElideMiddle
-                                    wrapMode: Text.NoWrap
-                                }
-
-                                Row {
-                                    spacing: 4
-                                    QGCLabel {
-                                        text: "A:" + (_rgbActive ? "✓" : "✗")
-                                        color: _rgbActive ? "lime" : "red"
-                                        font.pixelSize: ScreenTools.smallFontPointSize * 0.9
-                                    }
-                                    QGCLabel {
-                                        text: "D:" + (_rgbDecoding ? "✓" : "✗")
-                                        color: _rgbDecoding ? "lime" : "red"
-                                        font.pixelSize: ScreenTools.smallFontPointSize * 0.9
-                                    }
-                                }
+                        Row {
+                            anchors.centerIn: parent
+                            spacing: 8
+                            QGCLabel {
+                                text: "RGB"
+                                color: "white"
+                                font.bold: true
+                            }
+                            QGCLabel {
+                                text: _customVideoManager && _customVideoManager.isStreamDecoding(0) ? "✓" : "✗"
+                                color: _customVideoManager && _customVideoManager.isStreamDecoding(0) ? "lime" : "red"
                             }
                         }
+                    }
 
-                        // Thermal Stream
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 3
-                            color: "#1e1e1e"
-                            radius: 4
-                            border.color: _thermalDecoding ? "#e03131" : "gray"
-                            border.width: 2
+                    // Thermal
+                    Rectangle {
+                        width: parent.width
+                        height: ScreenTools.defaultFontPixelHeight * 2
+                        color: "#1e1e1e"
+                        radius: 4
+                        border.color: _customVideoManager && _customVideoManager.isStreamDecoding(1) ? "#e03131" : "gray"
+                        border.width: 2
 
-                            ColumnLayout {
-                                anchors.fill: parent
-                                anchors.margins: 4
-                                spacing: 2
-
-                                QGCLabel {
-                                    text: "Thermal"
-                                    color: "white"
-                                    font.bold: true
-                                    font.pixelSize: ScreenTools.smallFontPointSize
-                                }
-                                
-                                QGCLabel {
-                                    Layout.fillWidth: true
-                                    text: _thermalUri ? _thermalUri : "(no stream)"
-                                    color: "gray"
-                                    font.pixelSize: ScreenTools.smallFontPointSize * 0.7
-                                    elide: Text.ElideMiddle
-                                    wrapMode: Text.NoWrap
-                                }
-
-                                Row {
-                                    spacing: 4
-                                    QGCLabel {
-                                        text: "A:" + (_thermalActive ? "✓" : "✗")
-                                        color: _thermalActive ? "lime" : "red"
-                                        font.pixelSize: ScreenTools.smallFontPointSize * 0.9
-                                    }
-                                    QGCLabel {
-                                        text: "D:" + (_thermalDecoding ? "✓" : "✗")
-                                        color: _thermalDecoding ? "lime" : "red"
-                                        font.pixelSize: ScreenTools.smallFontPointSize * 0.9
-                                    }
-                                }
+                        Row {
+                            anchors.centerIn: parent
+                            spacing: 8
+                            QGCLabel {
+                                text: "Thermal"
+                                color: "white"
+                                font.bold: true
+                            }
+                            QGCLabel {
+                                text: _customVideoManager && _customVideoManager.isStreamDecoding(1) ? "✓" : "✗"
+                                color: _customVideoManager && _customVideoManager.isStreamDecoding(1) ? "lime" : "red"
                             }
                         }
                     }
                 }
+
+                Item { Layout.fillHeight: true }
             }
 
             Component {
