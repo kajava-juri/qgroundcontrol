@@ -16,6 +16,7 @@
 #include "VideoSettings.h"
 #include "BrandImageSettings.h"
 #include "FlightModeSettings.h"
+#include "DataCollectionController.h"
 
 #include <QtCore/QApplicationStatic>
 #include <QtQml/QQmlApplicationEngine>
@@ -312,6 +313,11 @@ QQmlApplicationEngine* CustomPlugin::createQmlApplicationEngine(QObject* parent)
     if (!_customSettings) {
         _customSettings = new CustomSettings(this);
         _addSettingsEntry(tr("Data Collection"), "qrc:/Custom/qml/CustomSettings.qml");
+    }
+
+    // Initialize data collection controller (singleton-like instance for C++ access)
+    if (!_dataCollectionController) {
+        _dataCollectionController = new DataCollectionController(this);
     }
 
     // Initialize custom video manager for dual-stream video display

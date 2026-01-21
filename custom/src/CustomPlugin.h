@@ -16,11 +16,13 @@
 #include "QGCCorePlugin.h"
 #include "QGCOptions.h"
 #include "CustomVideoManager.h"
+#include "DataCollectionController.h"
 
 class CustomOptions;
 class CustomPlugin;
 class CustomSettings;
 class CustomVideoManager;
+class DataCollectionController;
 class QQmlApplicationEngine;
 class QGCToolbox;
 
@@ -70,6 +72,7 @@ class CustomPlugin : public QGCCorePlugin
     Q_PROPERTY(CustomSettings* customSettings READ customSettings CONSTANT)
     Q_PROPERTY(QVariantList customSettingsPages READ customSettingsPages CONSTANT)
     Q_PROPERTY(CustomVideoManager* customVideoManager READ customVideoManager CONSTANT)
+    Q_PROPERTY(DataCollectionController* dataCollectionController READ dataCollectionController CONSTANT)
 
 public:
     explicit CustomPlugin(QObject *parent = nullptr);
@@ -95,6 +98,7 @@ public:
     CustomSettings *customSettings() const { return _customSettings; }
     QVariantList customSettingsPages() const { return _customSettingsList; }
     CustomVideoManager *customVideoManager() const { return _customVideoManager; }
+    DataCollectionController *dataCollectionController() const { return _dataCollectionController; }
 
 private slots:
     void _advancedChanged(bool advanced);
@@ -109,6 +113,7 @@ private:
     QVariantList _customSettingsList; // Not to be mixed up with QGCCorePlugin implementation
     CustomSettings *_customSettings = nullptr;
     CustomVideoManager *_customVideoManager = nullptr;
+    DataCollectionController *_dataCollectionController = nullptr;
 };
 
 /*===========================================================================*/

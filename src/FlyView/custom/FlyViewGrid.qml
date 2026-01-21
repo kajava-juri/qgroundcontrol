@@ -30,6 +30,51 @@ Item {
     property var dataController: null
     property var _customVideoManager: QGroundControl.corePlugin.customVideoManager
     property var _activeVehicle: QGroundControl.multiVehicleManager.activeVehicle 
+    
+    // Stream status properties
+    property bool   _rgbActive: false
+    property bool   _rgbDecoding: false
+    property bool   _thermalActive: false
+    property bool   _thermalDecoding: false
+    property string _rgbUri: ""
+    property string _thermalUri: ""
+
+    // Listen to CustomVideoManager signals
+    Connections {
+        target: _customVideoManager
+
+        function onStreamStateChanged(streamIndex, active) {
+            if (streamIndex === 0) {
+                _rgbActive = active
+            } else if (streamIndex === 1) {
+                _thermalActive = active
+            }
+        }
+
+        function onStreamDecodingChanged(streamIndex, decoding) {
+            if (streamIndex === 0) {
+                _rgbDecoding = decoding
+            } else if (streamIndex === 1) {
+                _thermalDecoding = decoding
+            }
+        }
+
+        function onStreamUriChanged(streamIndex, uri) {
+            if (streamIndex === 0) {
+                _rgbUri = uri
+            } else if (streamIndex === 1) {
+                _thermalUri = uri
+            }
+        }
+    }
+
+    // Initialize URIs on startup
+    Component.onCompleted: {
+        if (_customVideoManager) {
+            _rgbUri = _customVideoManager.getStreamUri(0)
+            _thermalUri = _customVideoManager.getStreamUri(1)
+        }
+    }
 
     // Grid state manager
     GridState {
@@ -284,56 +329,104 @@ Item {
                     font.bold: true
                 }
 
-                // Compact stream status
+                QGCLabel {
+                    text: "Manager: " + (_customVideoManager ? "✓" : "✗")
+                    color: _customVideoManager ? "lime" : "red"
+                    font.pixelSize: ScreenTools.smallFontPointSize
+                }
+
+                Rectangle { 
+                    Layout.fillWidth: true
+                    height: 1
+                    color: "gray"
+                }
+
+                // RGB stream details
                 Column {
                     Layout.fillWidth: true
-                    spacing: 4
+                    spacing: 2
 
-                    // RGB
-                    Rectangle {
+                    QGCLabel {
+                        text: "RGB (0):"
+                        color: "white"
+                        font.bold: true
+                    }
+                    QGCLabel {
+                        text: "  URI: " + (_rgbUri || "N/A")
+                        color: "white"
+                        font.pixelSize: ScreenTools.smallFontPointSize
+                        elide: Text.ElideMiddle
                         width: parent.width
-                        height: ScreenTools.defaultFontPixelHeight * 2
-                        color: "#1e1e1e"
-                        radius: 4
-                        border.color: _customVideoManager && _customVideoManager.isStreamDecoding(0) ? "green" : "gray"
-                        border.width: 2
-
-                        Row {
-                            anchors.centerIn: parent
-                            spacing: 8
-                            QGCLabel {
-                                text: "RGB"
-                                color: "white"
-                                font.bold: true
-                            }
-                            QGCLabel {
-                                text: _customVideoManager && _customVideoManager.isStreamDecoding(0) ? "✓" : "✗"
-                                color: _customVideoManager && _customVideoManager.isStreamDecoding(0) ? "lime" : "red"
-                            }
+                    }
+                    Row {
+                        spacing: 8
+                        QGCLabel {
+                            text: "  Active:"
+                            color: "white"
+                            font.pixelSize: ScreenTools.smallFontPointSize
+                        }
+                        QGCLabel {
+                            text: _rgbActive ? "✓" : "✗"
+                            color: _rgbActive ? "lime" : "red"
+                            font.pixelSize: ScreenTools.smallFontPointSize
+                        }
+                        QGCLabel {
+                            text: "Decoding:"
+                            color: "white"
+                            font.pixelSize: ScreenTools.smallFontPointSize
+                        }
+                        QGCLabel {
+                            text: _rgbDecoding ? "✓" : "✗"
+                            color: _rgbDecoding ? "lime" : "red"
+                            font.pixelSize: ScreenTools.smallFontPointSize
                         }
                     }
+                }
 
-                    // Thermal
-                    Rectangle {
+                Rectangle { 
+                    Layout.fillWidth: true
+                    height: 1
+                    color: "gray"
+                }
+
+                // Thermal stream details
+                Column {
+                    Layout.fillWidth: true
+                    spacing: 2
+
+                    QGCLabel {
+                        text: "Thermal (1):"
+                        color: "white"
+                        font.bold: true
+                    }
+                    QGCLabel {
+                        text: "  URI: " + (_thermalUri || "N/A")
+                        color: "white"
+                        font.pixelSize: ScreenTools.smallFontPointSize
+                        elide: Text.ElideMiddle
                         width: parent.width
-                        height: ScreenTools.defaultFontPixelHeight * 2
-                        color: "#1e1e1e"
-                        radius: 4
-                        border.color: _customVideoManager && _customVideoManager.isStreamDecoding(1) ? "#e03131" : "gray"
-                        border.width: 2
-
-                        Row {
-                            anchors.centerIn: parent
-                            spacing: 8
-                            QGCLabel {
-                                text: "Thermal"
-                                color: "white"
-                                font.bold: true
-                            }
-                            QGCLabel {
-                                text: _customVideoManager && _customVideoManager.isStreamDecoding(1) ? "✓" : "✗"
-                                color: _customVideoManager && _customVideoManager.isStreamDecoding(1) ? "lime" : "red"
-                            }
+                    }
+                    Row {
+                        spacing: 8
+                        QGCLabel {
+                            text: "  Active:"
+                            color: "white"
+                            font.pixelSize: ScreenTools.smallFontPointSize
+                        }
+                        QGCLabel {
+                            text: _thermalActive ? "✓" : "✗"
+                            color: _thermalActive ? "lime" : "red"
+                            font.pixelSize: ScreenTools.smallFontPointSize
+                        }
+                        QGCLabel {
+                            text: "Decoding:"
+                            color: "white"
+                            font.pixelSize: ScreenTools.smallFontPointSize
+                        }
+                        QGCLabel {
+                            text: _thermalDecoding ? "✓" : "✗"
+                            color: _thermalDecoding ? "lime" : "red"
+                            font.pixelSize: ScreenTools.smallFontPointSize
                         }
                     }
                 }

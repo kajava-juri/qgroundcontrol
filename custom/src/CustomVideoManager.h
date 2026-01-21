@@ -91,6 +91,7 @@ private:
         bool decoding = false;
         QTimer* decodingTimeoutTimer = nullptr;
         bool allowAutoRestart = true;
+        QMetaObject::Connection restartConnection;  // Connection for deferred restart
     };
 
     // StreamInfo _streams[STREAM_COUNT];

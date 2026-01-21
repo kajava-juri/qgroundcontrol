@@ -95,8 +95,8 @@ void DataCollectionController::startRecording() {
     qCDebug(DataCollectionControllerLog) << "Start recording invoked";
     if(!_isCollecting) {
         _isCollecting = true;
-        _sendHttpRequest("start");
         emit isCollectingChanged();
+        _sendHttpRequest("start");
         
         // Start periodic stream info requests only if vehicle already connected
         if (_vehicle) {
@@ -109,10 +109,31 @@ void DataCollectionController::startRecording() {
 void DataCollectionController::stopRecording() {
     qCDebug(DataCollectionControllerLog) << "Stop recording invoked";
     if (_isCollecting) {
-        _isCollecting = false;
+        // Send stop command first
         _sendHttpRequest("stop");
-        emit isCollectingChanged();
+        
+        // Perform full cleanup (stops streams, clears URIs, updates state)
+        _handleCollectionEnd();
     }
+}
+
+QVariant DataCollectionController::getSourceField(const QString& source, const QString& field) const
+{
+    if (_sourceStatus.contains(source)) {
+        const QVariantMap& statusMap = _sourceStatus[source];
+        if (statusMap.contains(field)) {
+            return statusMap[field];
+        }
+    }
+    return QVariant();  // Return invalid QVariant if not found
+}
+
+QVariantMap DataCollectionController::getSourceStatus(const QString& source) const
+{
+    if (_sourceStatus.contains(source)) {
+        return _sourceStatus[source];
+    }
+    return QVariantMap();  // Return empty map if source not found
 }
 
 void DataCollectionController::_onActiveVehicleChanged(Vehicle* vehicle)
@@ -169,12 +190,27 @@ void DataCollectionController::_onActiveVehicleChanged(Vehicle* vehicle)
                 QString name = QString::fromLatin1(namedValue.name, strnlen(namedValue.name, sizeof(namedValue.name)));
                 
                 qCDebug(DataCollectionControllerLog) << "NAMED_VALUE_FLOAT received:" << name << "=" << namedValue.value;
+
+
+                _handleNamedValue(name, QVariant::fromValue((double)namedValue.value));
                 
                 if (name == "test_count") {
                     _testValue = namedValue.value;
                     emit testValueChanged();
                     qCDebug(DataCollectionControllerLog) << "Updated test_count:" << _testValue;
                 }
+
+            }
+            else if (message.msgid == MAVLINK_MSG_ID_NAMED_VALUE_INT) {
+                mavlink_named_value_int_t namedValue;
+                mavlink_msg_named_value_int_decode(&message, &namedValue);
+
+                const QString name = QString::fromLatin1(namedValue.name,
+                                    strnlen(namedValue.name, sizeof(namedValue.name)));
+
+                qCDebug(DataCollectionControllerLog) << "NAMED_VALUE_INT:" << name << "=" << namedValue.value;
+
+                _handleNamedValue(name, QVariant::fromValue((qint64)namedValue.value));
             }
             else if (message.msgid == 269) { // VIDEO_STREAM_INFORMATION
                 mavlink_video_stream_information_t streamInfo;
@@ -207,7 +243,21 @@ void DataCollectionController::_onActiveVehicleChanged(Vehicle* vehicle)
                     if (QString::fromStdString(name) == streamName) {
                         videoManager->setStreamUri(index, uri);  // This will automatically restart if needed
                         qCDebug(DataCollectionControllerLog) << "Updated stream URI for" << streamName << "to" << uri;
-                        // Keep polling - don't stop timer (continuous monitoring)
+                        
+                        // Check if all streams now have URIs configured
+                        bool allStreamsConfigured = true;
+                        for (int i = 0; i < CustomVideoManager::STREAM_COUNT; i++) {
+                            if (videoManager->getStreamUri(i).isEmpty()) {
+                                allStreamsConfigured = false;
+                                break;
+                            }
+                        }
+                        
+                        if (allStreamsConfigured) {
+                            qCDebug(DataCollectionControllerLog) << "All streams configured - stopping periodic stream info requests";
+                            _stopPeriodicStreamInfoRequest();
+                        }
+                        
                         break;
                     }
                 }
@@ -217,6 +267,147 @@ void DataCollectionController::_onActiveVehicleChanged(Vehicle* vehicle)
     } else {
         qCDebug(DataCollectionControllerLog) << "No active vehicle";
     }
+}
+
+void DataCollectionController::_handleNamedValue(const QString& name, const QVariant& value)
+{
+    if (name == "dc_state") {
+        const int prevState = _dcState;
+        _dcState = value.toInt();
+        emit dcStateChanged();
+        
+        // Detect collection end via state transitions
+        if (_isCollecting && prevState == Running && 
+            (_dcState == Completed || _dcState == Idle || _dcState == Error)) {
+            qCDebug(DataCollectionControllerLog) << "DATA COLLECTION ENDED (state:" << _dcState << ") - stopping";
+            _handleCollectionEnd();
+        }
+        return;
+    }
+
+    if (name == "dc_prog") {
+        _dcProgress = value.toDouble();
+        emit dcProgressChanged();
+        return;
+    }
+
+    if (name == "dc_runid") {
+        _dcRunId = value.toInt();
+        emit dcRunIdChanged();
+        return;
+    }
+
+    if (name == "dc_errcnt") {
+        _dcErrorCount = value.toInt();
+        emit dcErrorCountChanged();
+        return;
+    }
+
+    if (name == "dc_ok") {
+        _dcOk = value.toInt() != 0;
+        emit dcOkChanged();
+        return;
+    }
+
+    // Per-source values: dc_<src>_<field>
+    if (name.startsWith("dc_")) {
+        // Examples:
+        // dc_imu_st, dc_cam0_ok
+        const QStringList parts = name.split('_');
+        if (parts.size() == 3) {
+            const QString src = parts[1];
+            const QString field = parts[2];
+
+            _updateSourceStatus(src, field, value);
+            return;
+        }
+    }
+
+    if (name == "vid_flags") {
+        const int prevFlags = _vidFlags;
+        _vidFlags = value.toInt();
+
+        const bool ready = _vidFlags & StreamsReady;
+        const bool active = _vidFlags & StreamsActive;
+        const bool wasActive = prevFlags & StreamsActive;
+        
+        if (active && ready) {
+            qCDebug(DataCollectionControllerLog) << "DATA COLLECTION IS READY - starting stream info polling";
+            // trigger polling VIDEO_STREAM_INFORMATION
+            _startPeriodicStreamInfoRequest();
+        }
+        
+        // Detect end of collection: StreamsActive flag goes from 1 to 0
+        if (wasActive && !active && _isCollecting) {
+            qCDebug(DataCollectionControllerLog) << "DATA COLLECTION ENDED (StreamsActive flag cleared) - stopping";
+            _handleCollectionEnd();
+        }
+
+        // print all flags for debugging
+        qCDebug(DataCollectionControllerLog) << "vid_flags changed: "
+            << "StreamsReady=" << ready
+            << "StreamsActive=" << active;
+
+        //emit vidFlagsChanged();
+        return;
+    }
+
+    if (name == "vid_count") {
+        _vidCount = value.toInt();
+        //emit vidCountChanged();
+        return;
+    }
+}
+
+void DataCollectionController::_updateSourceStatus(const QString& source, const QString& field, const QVariant& value)
+{
+    // Get or create the status map for this source
+    QVariantMap& statusMap = _sourceStatus[source];
+    
+    // Update the field value
+    statusMap[field] = value;
+    
+    qCDebug(DataCollectionControllerLog) << "Updated source status:" << source << field << "=" << value;
+    
+    // Emit signal that this source's status changed
+    emit sourceStatusChanged(source);
+}
+
+void DataCollectionController::_handleCollectionEnd()
+{
+    // Guard against multiple calls (both dc_state and vid_flags can trigger this)
+    if (!_isCollecting) {
+        qCDebug(DataCollectionControllerLog) << "_handleCollectionEnd: Already cleaned up, skipping";
+        return;
+    }
+    
+    qCDebug(DataCollectionControllerLog) << "_handleCollectionEnd: Performing cleanup";
+    
+    // Stop periodic stream info requests
+    _stopPeriodicStreamInfoRequest();
+    
+    // Explicitly stop all video streams to prevent timeout/resource leaks
+    CustomPlugin* plugin = qobject_cast<CustomPlugin*>(QGCCorePlugin::instance());
+    if (plugin && plugin->customVideoManager()) {
+        CustomVideoManager* videoManager = plugin->customVideoManager();
+        qCDebug(DataCollectionControllerLog) << "Stopping all video streams";
+        
+        for (int i = 0; i < CustomVideoManager::STREAM_COUNT; i++) {
+            videoManager->stopStream(i);
+            videoManager->setStreamUri(i, "");  // Clear URIs to prevent auto-restart
+        }
+    } else {
+        qCWarning(DataCollectionControllerLog) << "Could not access CustomVideoManager for stream cleanup";
+    }
+    
+    // Update recording state
+    if (_isCollecting) {
+        _isCollecting = false;
+        emit isCollectingChanged();
+    }
+    
+    
+    qCDebug(DataCollectionControllerLog) << "Collection cleanup completed";
 }
 
 void DataCollectionController::_startPeriodicStreamInfoRequest()

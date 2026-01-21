@@ -13,6 +13,8 @@
 #include "QtQuick/QQuickWindow"
 #include "Vehicle.h"
 #include "MultiVehicleManager.h"
+#include "CustomPlugin.h"
+#include "DataCollectionController.h"
 
 #include <QDebug>
 
@@ -44,7 +46,6 @@ CustomVideoManager::CustomVideoManager(QObject* parent)
 
 void CustomVideoManager::_initAfterQmlIsReady()
 {
-    // Only run once to prevent infinite loop
     if (_initAfterQmlIsReadyDone) {
         qCWarning(CustomVideoManagerLog) << "_initAfterQmlIsReady called multiple times";
         return;
@@ -57,13 +58,11 @@ void CustomVideoManager::_initAfterQmlIsReady()
 
     qCWarning(CustomVideoManagerLog) << "_initAfterQmlIsReady - searching for video widgets";
 
-    // Find widgets
     QQuickItem* rgbWidget = _mainWindow->findChild<QQuickItem*>("customRgbVideo");
     QQuickItem* thermalWidget = _mainWindow->findChild<QQuickItem*>("customThermalVideo");
 
     qCWarning(CustomVideoManagerLog) << "Found widgets - RGB:" << rgbWidget << "Thermal:" << thermalWidget;
 
-    // Setup receivers
     _setupReceiver(STREAM_RGB, rgbWidget);
     _setupReceiver(STREAM_THERMAL, thermalWidget);
 
@@ -79,7 +78,6 @@ void CustomVideoManager::reinitializeWidgets()
 
     qCWarning(CustomVideoManagerLog) << "reinitializeWidgets - re-finding video widgets after mode change";
 
-    // Find widgets (they may have been recreated by Loaders)
     QQuickItem* rgbWidget = _mainWindow->findChild<QQuickItem*>("customRgbVideo");
     QQuickItem* thermalWidget = _mainWindow->findChild<QQuickItem*>("customThermalVideo");
 
@@ -104,23 +102,31 @@ void CustomVideoManager::reinitializeWidgets()
 
         qCWarning(CustomVideoManagerLog) << "Stream" << i << "state before reinit: wasDecoding=" << wasDecoding;
 
+        // Check if data collection is running
+        CustomPlugin* plugin = qobject_cast<CustomPlugin*>(QGCCorePlugin::instance());
+        bool dataCollectionRunning = false;
+        if (plugin && plugin->dataCollectionController()) {
+            dataCollectionRunning = plugin->dataCollectionController()->isCollecting();
+        }
+
         if (wasDecoding) {
             qCWarning(CustomVideoManagerLog) << "Stopping stream" << i << "before widget change";
             _streams[i].receiver->stopDecoding();
         }
+        else if (!wasDecoding && dataCollectionRunning && !_streams[i].uri.isEmpty()) {
+            qCWarning(CustomVideoManagerLog) << "Stream" << i << "was not decoding but data collection is running - will restart";
+            wasDecoding = true;  // Override to trigger restart logic
+        }
 
-        // Release old sink
         if (_streams[i].sink) {
             qCWarning(CustomVideoManagerLog) << "Releasing old sink for stream" << i;
             QGCCorePlugin::instance()->releaseVideoSink(_streams[i].sink);
             _streams[i].sink = nullptr;
         }
 
-        // Update widget reference
         qCWarning(CustomVideoManagerLog) << "Updating widget for stream" << i;
         _streams[i].receiver->setWidget(newWidget);
 
-        // Create new sink
         qCWarning(CustomVideoManagerLog) << "Creating new sink for stream" << i;
         void *sink = QGCCorePlugin::instance()->createVideoSink(newWidget, _streams[i].receiver);
         if (!sink) {
@@ -135,6 +141,11 @@ void CustomVideoManager::reinitializeWidgets()
         if (wasDecoding && _streams[i].sink) {
             qCWarning(CustomVideoManagerLog) << "Stream" << i 
                                               << "needs restart - setting up deferred check";
+            
+            if (_streams[i].restartConnection) {
+                qCWarning(CustomVideoManagerLog) << "Disconnecting previous restart connection for stream" << i;
+                QObject::disconnect(_streams[i].restartConnection);
+            }
             
             // Use QTimer::singleShot to check on next event loop iteration
             // This ensures all pending decodingChanged signals have been processed
@@ -151,13 +162,11 @@ void CustomVideoManager::reinitializeWidgets()
                                                       << "already stopped, restarting immediately";
                     _streams[i].receiver->startDecoding(_streams[i].sink);
                 } else {
-                    // Still decoding, wait for signal
                     qCWarning(CustomVideoManagerLog) << "Stream" << i 
                                                       << "still decoding - waiting for stop signal";
                     
-                    QMetaObject::Connection* conn = new QMetaObject::Connection();
-                    *conn = connect(_streams[i].receiver, &VideoReceiver::decodingChanged, this, 
-                        [this, i, conn](bool decoding) {
+                    _streams[i].restartConnection = connect(_streams[i].receiver, &VideoReceiver::decodingChanged, this, 
+                        [this, i](bool decoding) {
                             qCWarning(CustomVideoManagerLog) << "Stream" << i 
                                                               << "decodingChanged lambda fired: decoding=" 
                                                               << decoding;
@@ -167,8 +176,9 @@ void CustomVideoManager::reinitializeWidgets()
                                                                   << "decoding stopped, restarting now";
                                 _streams[i].receiver->startDecoding(_streams[i].sink);
                                 
-                                QObject::disconnect(*conn);
-                                delete conn;
+                                // Disconnect after use
+                                QObject::disconnect(_streams[i].restartConnection);
+                                _streams[i].restartConnection = QMetaObject::Connection();
                             }
                     });
                 }
@@ -399,11 +409,24 @@ void CustomVideoManager::_stopReceiver(int streamIndex)
     }
 
     StreamInfo& stream = _streams[streamIndex];
-    if (stream.receiver && stream.receiver->started()) {
-        qCWarning(CustomVideoManagerLog) << "Stopping stream" << streamIndex;
-        stream.receiver->stop();
-        qCWarning(CustomVideoManagerLog) << "Stream" << streamIndex << "stop() called";
+    if (!stream.receiver) {
+        qCWarning(CustomVideoManagerLog) << "Stream" << streamIndex << "has no receiver, skipping stop";
+        return;
     }
+    
+    bool wasStarted = stream.receiver->started();
+    qCWarning(CustomVideoManagerLog) << "Stopping stream" << streamIndex 
+                                      << "wasStarted:" << wasStarted
+                                      << "URI:" << stream.uri;
+    
+    if (stream.decodingTimeoutTimer) {
+        stream.decodingTimeoutTimer->stop();
+    }
+    
+    // Call stop() regardless of started() state to ensure cleanup
+    // The receiver's stop() should be idempotent
+    stream.receiver->stop();
+    qCWarning(CustomVideoManagerLog) << "Stream" << streamIndex << "stop() called";
 }
 
 void CustomVideoManager::startStream(int streamIndex)
@@ -450,9 +473,27 @@ void CustomVideoManager::setStreamUri(int streamIndex, const QString& uri)
     QString currentUri = _streams[streamIndex].uri;
 
     qCDebug(CustomVideoManagerLog) << "Current URI for stream" << streamIndex << "is" << _streams[streamIndex].uri;
-    // Only update if different
+    
+    // If URI is the same, check if stream is already running
     if (currentUri == uri) {
-        qCWarning(CustomVideoManagerLog) << "Stream" << streamIndex << "URI unchanged, skipping";
+        // If stream is already decoding, nothing to do
+        if (_streams[streamIndex].decoding) {
+            qCWarning(CustomVideoManagerLog) << "Stream" << streamIndex << "URI unchanged and already decoding, skipping";
+            return;
+        }
+        // URI is same but stream not running - need to restart it properly
+        qCWarning(CustomVideoManagerLog) << "Stream" << streamIndex << "URI unchanged but not decoding, restarting";
+        if (!uri.isEmpty()) {
+            // Stop first if receiver is in started state (prevents "Already running!" error)
+            if (_streams[streamIndex].receiver && _streams[streamIndex].receiver->started()) {
+                qCWarning(CustomVideoManagerLog) << "Stream" << streamIndex << "stopping stale receiver, will auto-restart via onStopComplete";
+                // onStopComplete handler will automatically restart after stop completes
+                stopStream(streamIndex);
+            } else {
+                // Not started, just start directly
+                startStream(streamIndex);
+            }
+        }
         return;
     }
 
@@ -464,11 +505,33 @@ void CustomVideoManager::setStreamUri(int streamIndex, const QString& uri)
         if (_streams[streamIndex].receiver && _streams[streamIndex].receiver->started()) {
             qCWarning(CustomVideoManagerLog) << "Stopping stream" << streamIndex 
                                               << "before URI change";
+            
+            // Disable auto-restart temporarily - we'll start manually after URI update
+            _streams[streamIndex].allowAutoRestart = false;
             stopStream(streamIndex);
             
-            // Give GStreamer time to fully stop
-            // This is critical for clean pipeline teardown
-            QThread::msleep(200);
+            // Wait for stop to complete before updating URI
+            // Use single-shot connection to onStopComplete
+            QMetaObject::Connection* conn = new QMetaObject::Connection();
+            *conn = connect(_streams[streamIndex].receiver, &VideoReceiver::onStopComplete, this,
+                [this, streamIndex, uri, conn](VideoReceiver::STATUS status) {
+                    Q_UNUSED(status);
+                    qCWarning(CustomVideoManagerLog) << "Stream" << streamIndex 
+                                                      << "stopped, now updating URI to" << uri;
+                    disconnect(*conn);
+                    delete conn;
+                    
+                    // Now update URI and start
+                    _streams[streamIndex].uri = uri;
+                    emit streamUriChanged(streamIndex, uri);
+                    
+                    if (!uri.isEmpty()) {
+                        qCWarning(CustomVideoManagerLog) << "Starting stream" << streamIndex 
+                                                          << "with new URI";
+                        startStream(streamIndex);
+                    }
+                });
+            return;  // Exit early - continuation happens in callback
         }
     }
     
