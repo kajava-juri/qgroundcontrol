@@ -119,9 +119,21 @@ void CustomVideoManager::reinitializeWidgets()
         }
 
         if (_streams[i].sink) {
-            qCWarning(CustomVideoManagerLog) << "Releasing old sink for stream" << i;
-            QGCCorePlugin::instance()->releaseVideoSink(_streams[i].sink);
-            _streams[i].sink = nullptr;
+            if (_streams[i].decoding) {
+                QMetaObject::Connection cleanupConn = connect(_streams[i].receiver, &VideoReceiver::decodingChanged, this,
+                [this, i, oldSink = _streams[i].sink](bool decoding) {
+                    if (!decoding) {
+                        qCWarning(CustomVideoManagerLog) << "Stream" << i 
+                                                          << "decoding stopped, now releasing old sink";
+                        QGCCorePlugin::instance()->releaseVideoSink(oldSink);
+                    }
+                }, Qt::SingleShotConnection);
+                _streams[i].sink = nullptr;  // Clear immediately to avoid double-release
+            } else {
+                qCWarning(CustomVideoManagerLog) << "Releasing old sink for stream" << i;
+                QGCCorePlugin::instance()->releaseVideoSink(_streams[i].sink);
+                _streams[i].sink = nullptr;
+            }
         }
 
         qCWarning(CustomVideoManagerLog) << "Updating widget for stream" << i;
@@ -138,7 +150,7 @@ void CustomVideoManager::reinitializeWidgets()
         }
 
         // If stream was decoding, restart it after GStreamer finishes stopping
-        if (wasDecoding && _streams[i].sink) {
+        if (wasDecoding) {
             qCWarning(CustomVideoManagerLog) << "Stream" << i 
                                               << "needs restart - setting up deferred check";
             

@@ -177,6 +177,9 @@ void DataCollectionController::_onActiveVehicleChanged(Vehicle* vehicle)
         
         // Listen to ALL MAVLink messages for debugging
         connect(_vehicle, &Vehicle::mavlinkMessageReceived, this, [this](const mavlink_message_t& message) {
+            if (message.compid != DATA_COLLECTION_COMPONENT_ID) {
+                return; // Ignore non-DataCollection messages, it seems that drone's high amount of MAVLink traffic can overwhelm and responses from DataCollection python script get lost, I hope this solves the latency tomorrow, otherwise I am screwed :)
+            }
             // Log every message type we receive
             static int msgCount = 0;
             if (msgCount++ < 10) {  // Only log first 10 to avoid spam

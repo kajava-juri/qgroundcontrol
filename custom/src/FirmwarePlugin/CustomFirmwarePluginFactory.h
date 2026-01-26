@@ -13,12 +13,14 @@
 #include "QGCMAVLink.h"
 
 class CustomFirmwarePlugin;
+class ArduCopterFirmwarePlugin;
+class ArduPlaneFirmwarePlugin;
+class ArduRoverFirmwarePlugin;
+class ArduSubFirmwarePlugin;
 class FirmwarePlugin;
 
-/// This custom implementation of FirmwarePluginFactory creates a custom build which only supports
-/// PX4 Pro firmware running on a multi-rotor vehicle. This is turn removes portions of the QGC UI
-/// related to other firmware and vehicle types. This creating a more simplified UI for a specific
-/// type of vehicle.
+/// This custom implementation of FirmwarePluginFactory creates a custom build which supports
+/// both PX4 Pro and ArduPilot firmware running on various vehicle types.
 class CustomFirmwarePluginFactory : public FirmwarePluginFactory
 {
     Q_OBJECT
@@ -31,6 +33,10 @@ public:
 
 private:
     CustomFirmwarePlugin *_pluginInstance = nullptr;
+    ArduCopterFirmwarePlugin *_arduCopterPluginInstance = nullptr;
+    ArduPlaneFirmwarePlugin *_arduPlanePluginInstance = nullptr;
+    ArduRoverFirmwarePlugin *_arduRoverPluginInstance = nullptr;
+    ArduSubFirmwarePlugin *_arduSubPluginInstance = nullptr;
 };
 
 extern CustomFirmwarePluginFactory CustomFirmwarePluginFactoryImp;
