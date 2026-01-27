@@ -83,7 +83,6 @@ void CustomVideoManager::reinitializeWidgets()
 
     qCWarning(CustomVideoManagerLog) << "Found widgets - RGB:" << rgbWidget << "Thermal:" << thermalWidget;
 
-    // For each stream, update the widget reference and recreate sink without stopping receiver
     for (int i = 0; i < STREAM_COUNT; i++) {
         QQuickItem* newWidget = (i == STREAM_RGB) ? rgbWidget : thermalWidget;
 
@@ -109,102 +108,113 @@ void CustomVideoManager::reinitializeWidgets()
             dataCollectionRunning = plugin->dataCollectionController()->isCollecting();
         }
 
-        if (wasDecoding) {
-            qCWarning(CustomVideoManagerLog) << "Stopping stream" << i << "before widget change";
-            _streams[i].receiver->stopDecoding();
-        }
-        else if (!wasDecoding && dataCollectionRunning && !_streams[i].uri.isEmpty()) {
-            qCWarning(CustomVideoManagerLog) << "Stream" << i << "was not decoding but data collection is running - will restart";
-            wasDecoding = true;  // Override to trigger restart logic
+        if (!wasDecoding && dataCollectionRunning && !_streams[i].uri.isEmpty()) {
+            qCWarning(CustomVideoManagerLog) << "Stream" << i 
+                                              << "data collection active but not decoding - will restart";
+            wasDecoding = true;
         }
 
-        if (_streams[i].sink) {
-            if (_streams[i].decoding) {
-                QMetaObject::Connection cleanupConn = connect(_streams[i].receiver, &VideoReceiver::decodingChanged, this,
-                [this, i, oldSink = _streams[i].sink](bool decoding) {
-                    if (!decoding) {
-                        qCWarning(CustomVideoManagerLog) << "Stream" << i 
-                                                          << "decoding stopped, now releasing old sink";
-                        QGCCorePlugin::instance()->releaseVideoSink(oldSink);
-                    }
-                }, Qt::SingleShotConnection);
-                _streams[i].sink = nullptr;  // Clear immediately to avoid double-release
-            } else {
-                qCWarning(CustomVideoManagerLog) << "Releasing old sink for stream" << i;
-                QGCCorePlugin::instance()->releaseVideoSink(_streams[i].sink);
-                _streams[i].sink = nullptr;
-            }
+        // Stop decoding if currently active
+        if (_streams[i].decoding) {
+            qCWarning(CustomVideoManagerLog) << "Stopping decoding for stream" << i;
+            _streams[i].receiver->stopDecoding();
         }
+
+        // Disconnect old restart connection
+        if (_streams[i].restartConnection) {
+            qCWarning(CustomVideoManagerLog) << "Disconnecting previous restart connection for stream" << i;
+            QObject::disconnect(_streams[i].restartConnection);
+            _streams[i].restartConnection = QMetaObject::Connection();
+        }
+
+        // Capture old sink for cleanup
+        void* oldSink = _streams[i].sink;
+        bool needsCleanup = (_streams[i].decoding && oldSink != nullptr);
+        
+        // Clear sink reference immediately (will be recreated below)
+        _streams[i].sink = nullptr;
 
         qCWarning(CustomVideoManagerLog) << "Updating widget for stream" << i;
         _streams[i].receiver->setWidget(newWidget);
 
         qCWarning(CustomVideoManagerLog) << "Creating new sink for stream" << i;
-        void *sink = QGCCorePlugin::instance()->createVideoSink(newWidget, _streams[i].receiver);
-        if (!sink) {
+        void *newSink = QGCCorePlugin::instance()->createVideoSink(newWidget, _streams[i].receiver);
+        if (!newSink) {
             qCCritical(CustomVideoManagerLog) << "Failed to create sink for stream" << i;
-        } else {
-            qCWarning(CustomVideoManagerLog) << "New sink created for stream" << i;
-            _streams[i].sink = sink;
-            _streams[i].receiver->setSink(sink);
+            continue;
         }
+        
+        qCWarning(CustomVideoManagerLog) << "New sink created for stream" << i;
+        _streams[i].sink = newSink;
+        _streams[i].receiver->setSink(newSink);
 
-        // If stream was decoding, restart it after GStreamer finishes stopping
-        if (wasDecoding) {
+        // Set up COMBINED cleanup + restart connection
+        // old method of connecting to only release video sink caused race conditions
+        if (wasDecoding && newSink && !_streams[i].uri.isEmpty()) {
             qCWarning(CustomVideoManagerLog) << "Stream" << i 
-                                              << "needs restart - setting up deferred check";
+                                            << "setting up combined cleanup/restart connection";
             
-            if (_streams[i].restartConnection) {
-                qCWarning(CustomVideoManagerLog) << "Disconnecting previous restart connection for stream" << i;
-                QObject::disconnect(_streams[i].restartConnection);
-            }
+            _streams[i].restartConnection = connect(
+                _streams[i].receiver, &VideoReceiver::decodingChanged, this,
+                [this, i, oldSink, needsCleanup](bool decoding) {
+                    qCWarning(CustomVideoManagerLog) << "Stream" << i 
+                                                    << "decodingChanged (combined lambda): " << decoding;
+                    
+                    if (!decoding) {
+                        // Cleanup
+                        if (needsCleanup && oldSink) {
+                            qCWarning(CustomVideoManagerLog) << "Stream" << i 
+                                                            << "releasing old sink";
+                            QGCCorePlugin::instance()->releaseVideoSink(oldSink);
+                        }
+                        
+                        // Restart
+                        if (_streams[i].sink && !_streams[i].uri.isEmpty()) {
+                            qCWarning(CustomVideoManagerLog) << "Stream" << i 
+                                                            << "restarting decoding";
+                            _streams[i].receiver->startDecoding(_streams[i].sink);
+                        }
+                        
+                        // Cleanup connection
+                        QObject::disconnect(_streams[i].restartConnection);
+                        _streams[i].restartConnection = QMetaObject::Connection();
+                    }
+                }, Qt::DirectConnection  // ← Use Direct instead of Auto!
+            );
             
-            // Use QTimer::singleShot to check on next event loop iteration
-            // This ensures all pending decodingChanged signals have been processed
-            QTimer::singleShot(0, this, [this, i]() {
-                if (!_streams[i].sink) {
+            //Use QTimer to check state AFTER event loop processes, sometimes decodingChanged signal is not emitted (idk why)
+            QTimer::singleShot(0, this, [this, i, oldSink, needsCleanup, newSink]() {
+                // Check if decoding stopped while we were setting up the connection
+                if (!_streams[i].decoding && _streams[i].sink && !_streams[i].uri.isEmpty()) {
                     qCWarning(CustomVideoManagerLog) << "Stream" << i 
-                                                      << "sink gone, cannot restart";
-                    return;
-                }
-                
-                if (!_streams[i].decoding) {
-                    // Already stopped, restart now
+                                                    << "ALREADY stopped (missed signal) - handling immediately";
+                    
+                    // Cleanup
+                    if (needsCleanup && oldSink) {
+                        qCWarning(CustomVideoManagerLog) << "Stream" << i 
+                                                        << "releasing old sink immediately";
+                        QGCCorePlugin::instance()->releaseVideoSink(oldSink);
+                    }
+                    
+                    // Restart
                     qCWarning(CustomVideoManagerLog) << "Stream" << i 
-                                                      << "already stopped, restarting immediately";
-                    _streams[i].receiver->startDecoding(_streams[i].sink);
+                                                    << "restarting immediately";
+                    _streams[i].receiver->startDecoding(newSink);
+                    
+                    // Cleanup connection since we handled it manually
+                    QObject::disconnect(_streams[i].restartConnection);
+                    _streams[i].restartConnection = QMetaObject::Connection();
                 } else {
                     qCWarning(CustomVideoManagerLog) << "Stream" << i 
-                                                      << "still decoding - waiting for stop signal";
-                    
-                    _streams[i].restartConnection = connect(_streams[i].receiver, &VideoReceiver::decodingChanged, this, 
-                        [this, i](bool decoding) {
-                            qCWarning(CustomVideoManagerLog) << "Stream" << i 
-                                                              << "decodingChanged lambda fired: decoding=" 
-                                                              << decoding;
-                            
-                            if (!decoding && _streams[i].sink) {
-                                qCWarning(CustomVideoManagerLog) << "Stream" << i 
-                                                                  << "decoding stopped, restarting now";
-                                _streams[i].receiver->startDecoding(_streams[i].sink);
-                                
-                                // Disconnect after use
-                                QObject::disconnect(_streams[i].restartConnection);
-                                _streams[i].restartConnection = QMetaObject::Connection();
-                            }
-                    });
+                                                    << "still decoding or waiting for signal: decoding=" 
+                                                    << _streams[i].decoding;
                 }
             });
-        } else {
-            qCWarning(CustomVideoManagerLog) << "Stream" << i 
-                                              << "will not restart: wasDecoding=" << wasDecoding 
-                                              << "sink=" << _streams[i].sink;
         }
     }
 
     qCWarning(CustomVideoManagerLog) << "Widget reinitialization complete";
 }
-
 
 CustomVideoManager::~CustomVideoManager()
 {

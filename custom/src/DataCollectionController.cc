@@ -4,6 +4,7 @@
 #include "Vehicle.h"
 #include "MultiVehicleManager.h"
 #include "CustomPlugin.h"
+#include "MAVLinkProtocol.h"
 #include <QtNetwork/QNetworkReply>
 #include <QtNetwork/QNetworkAccessManager>
 #include <QtCore/QJsonDocument>
@@ -259,6 +260,7 @@ void DataCollectionController::_onActiveVehicleChanged(Vehicle* vehicle)
                         if (allStreamsConfigured) {
                             qCDebug(DataCollectionControllerLog) << "All streams configured - stopping periodic stream info requests";
                             _stopPeriodicStreamInfoRequest();
+                            _sendReadySignalToDataCollector();
                         }
                         
                         break;
@@ -448,6 +450,42 @@ void DataCollectionController::_stopPeriodicStreamInfoRequest()
     }
     disconnect(&_streamInfoTimer, nullptr, this, nullptr);
     _streamInfoRetries = 0;
+}
+
+void DataCollectionController::_sendReadySignalToDataCollector()
+{
+    if (!_vehicle) {
+        qCWarning(DataCollectionControllerLog) << "_sendReadySignalToDataCollector: No active vehicle";
+        return;
+    }
+    
+    // Get primary link
+    SharedLinkInterfacePtr sharedLink = _vehicle->vehicleLinkManager()->primaryLink().lock();
+    if (!sharedLink) {
+        qCWarning(DataCollectionControllerLog) << "_sendReadySignalToDataCollector: No primary link";
+        return;
+    }
+    
+    qCDebug(DataCollectionControllerLog) << "_sendReadySignalToDataCollector: Sending QGC_VID_READY=1";
+    
+    // Create NAMED_VALUE_INT message
+    mavlink_message_t msg;
+    mavlink_named_value_int_t namedValue;
+    
+    namedValue.time_boot_ms = 0; // works without timestamp
+    strncpy(namedValue.name, "QGC_VID_READY", sizeof(namedValue.name));
+    namedValue.value = 1;
+    
+    // Encode and send
+    mavlink_msg_named_value_int_encode_chan(
+        MAVLinkProtocol::instance()->getSystemId(),
+        MAVLinkProtocol::getComponentId(),
+        sharedLink->mavlinkChannel(),
+        &msg,
+        &namedValue
+    );
+    
+    _vehicle->sendMessageOnLinkThreadSafe(sharedLink.get(), msg);
 }
 
 // //-----------------------------------------------------------------------------
