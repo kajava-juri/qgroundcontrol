@@ -142,7 +142,8 @@ Item {
                 }
 
                 Text {
-                    anchors.centerIn: parent
+                    anchors.top: parent.top
+                    anchors.left: parent.left
                     text: "RGB Camera"
                     color: "white"
                     horizontalAlignment: Text.AlignHCenter
@@ -169,7 +170,8 @@ Item {
                 }
 
                 Text {
-                    anchors.centerIn: parent
+                    anchors.top: parent.top
+                    anchors.left: parent.left
                     text: "Thermal Camera"
                     color: "white"
                     horizontalAlignment: Text.AlignHCenter
@@ -327,11 +329,11 @@ Item {
             }
         }
 
-        Text {
-            text: "Test Value: " + dataController.testValue
-            color: "white"
-            font.pixelSize: 24
-        }
+        // Text {
+        //     text: "Test Value: " + dataController.testValue
+        //     color: "white"
+        //     font.pixelSize: 24
+        // }
         
 
         Component {

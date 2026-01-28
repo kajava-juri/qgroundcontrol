@@ -40,6 +40,21 @@ QGCPopupDialog {
         RowLayout {
             Layout.fillWidth: true
             spacing: ScreenTools.defaultFontPixelWidth * 2
+            visible: _customSettings && _customSettings.noTimeout
+
+            QGCLabel {
+                Layout.fillWidth: true
+                text: qsTr("No Timeout (Run Indefinitely)")
+            }
+
+            FactCheckBox {
+                fact: _customSettings ? _customSettings.noTimeout : null
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: ScreenTools.defaultFontPixelWidth * 2
             visible: _customSettings && _customSettings.enableVoxlLogging
 
             QGCLabel {

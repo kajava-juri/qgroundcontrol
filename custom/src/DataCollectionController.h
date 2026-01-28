@@ -20,6 +20,14 @@ class DataCollectionController : public QObject
     Q_PROPERTY(int dcRunId READ dcRunId NOTIFY dcRunIdChanged)
     Q_PROPERTY(int dcErrorCount READ dcErrorCount NOTIFY dcErrorCountChanged)
     Q_PROPERTY(bool dcOk READ dcOk NOTIFY dcOkChanged)
+    
+    // RTK GPS properties
+    Q_PROPERTY(int rtkFix READ rtkFix NOTIFY rtkFixChanged)
+    Q_PROPERTY(int rtkSats READ rtkSats NOTIFY rtkSatsChanged)
+    Q_PROPERTY(double rtkHdop READ rtkHdop NOTIFY rtkHdopChanged)
+    Q_PROPERTY(double rtkLat READ rtkLat NOTIFY rtkLatChanged)
+    Q_PROPERTY(double rtkLon READ rtkLon NOTIFY rtkLonChanged)
+    Q_PROPERTY(double rtkAlt READ rtkAlt NOTIFY rtkAltChanged)
 
 public:
     DataCollectionController(QObject* parent = nullptr);
@@ -32,6 +40,14 @@ public:
     int dcRunId() const {return _dcRunId;}
     int dcErrorCount() const {return _dcErrorCount;}
     bool dcOk() const {return _dcOk;}
+    
+    // RTK GPS getters
+    int rtkFix() const {return _rtkFix;}
+    int rtkSats() const {return _rtkSats;}
+    double rtkHdop() const {return _rtkHdop;}
+    double rtkLat() const {return _rtkLat;}
+    double rtkLon() const {return _rtkLon;}
+    double rtkAlt() const {return _rtkAlt;}
 
     Q_INVOKABLE void toggleRecording();
     Q_INVOKABLE void startRecording();
@@ -68,6 +84,14 @@ signals:
     void dcErrorCountChanged();
     void dcOkChanged();
     void sourceStatusChanged(const QString& source);
+    
+    // RTK GPS signals
+    void rtkFixChanged();
+    void rtkSatsChanged();
+    void rtkHdopChanged();
+    void rtkLatChanged();
+    void rtkLonChanged();
+    void rtkAltChanged();
 
 private slots:
     void _onActiveVehicleChanged(Vehicle* vehicle);
@@ -89,6 +113,14 @@ private:
     bool _dcOk{false};
     int _vidCount{0};
     int _vidFlags{0};
+    
+    // RTK GPS variables
+    int _rtkFix{0};
+    int _rtkSats{0};
+    double _rtkHdop{0.0};
+    double _rtkLat{0.0};
+    double _rtkLon{0.0};
+    double _rtkAlt{0.0};
     
     // Per-source status tracking: source name -> {field -> value}
     QMap<QString, QVariantMap> _sourceStatus;

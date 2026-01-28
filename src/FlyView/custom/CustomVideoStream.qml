@@ -37,7 +37,8 @@ Rectangle {
 
     // Stream label overlay (always visible for identification)
     Text {
-        anchors.centerIn: parent
+        anchors.top: parent.top
+        anchors.left: parent.left
         text: streamLabel
         color: "white"
         font.pixelSize: ScreenTools.defaultFontPixelHeight

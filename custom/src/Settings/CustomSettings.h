@@ -20,6 +20,7 @@ public:
     DEFINE_SETTINGFACT(httpUrl)
     DEFINE_SETTINGFACT(folderName)
     DEFINE_SETTINGFACT(timeout)
+    DEFINE_SETTINGFACT(noTimeout)
     DEFINE_SETTINGFACT(enableVoxlLogging)
     DEFINE_SETTINGFACT(enableRtkLogging)
     DEFINE_SETTINGFACT(enableQgcStreaming)

@@ -62,6 +62,7 @@ void DataCollectionController::_sendHttpRequest(QString endpoint) {
     QJsonObject jsonObj;
     jsonObj["folder"] = plugin->customSettings()->folderName()->rawValue().toString();
     jsonObj["timeout"] = plugin->customSettings()->timeout()->rawValue().toInt();
+    jsonObj["no_timeout"] = plugin->customSettings()->noTimeout()->rawValue().toBool();
     jsonObj["enable_voxl_logging"] = plugin->customSettings()->enableVoxlLogging()->rawValue().toBool();
     jsonObj["enable_rtk_logging"] = plugin->customSettings()->enableRtkLogging()->rawValue().toBool();
     jsonObj["enable_qgc_streaming"] = plugin->customSettings()->enableQgcStreaming()->rawValue().toBool();
@@ -313,6 +314,43 @@ void DataCollectionController::_handleNamedValue(const QString& name, const QVar
         emit dcOkChanged();
         return;
     }
+    
+    // RTK GPS values
+    if (name == "rtk_fix") {
+        _rtkFix = value.toInt();
+        emit rtkFixChanged();
+        return;
+    }
+    
+    if (name == "rtk_sats") {
+        _rtkSats = value.toInt();
+        emit rtkSatsChanged();
+        return;
+    }
+    
+    if (name == "rtk_hdop") {
+        _rtkHdop = value.toDouble();
+        emit rtkHdopChanged();
+        return;
+    }
+    
+    if (name == "rtk_lat") {
+        _rtkLat = value.toDouble();
+        emit rtkLatChanged();
+        return;
+    }
+    
+    if (name == "rtk_lon") {
+        _rtkLon = value.toDouble();
+        emit rtkLonChanged();
+        return;
+    }
+    
+    if (name == "rtk_alt") {
+        _rtkAlt = value.toDouble();
+        emit rtkAltChanged();
+        return;
+    }
 
     // Per-source values: dc_<src>_<field>
     if (name.startsWith("dc_")) {
@@ -466,14 +504,14 @@ void DataCollectionController::_sendReadySignalToDataCollector()
         return;
     }
     
-    qCDebug(DataCollectionControllerLog) << "_sendReadySignalToDataCollector: Sending QGC_VID_READY=1";
+    qCDebug(DataCollectionControllerLog) << "_sendReadySignalToDataCollector: Sending QGC_VIDRDY=1";
     
     // Create NAMED_VALUE_INT message
     mavlink_message_t msg;
     mavlink_named_value_int_t namedValue;
     
     namedValue.time_boot_ms = 0; // works without timestamp
-    strncpy(namedValue.name, "QGC_VID_READY", sizeof(namedValue.name));
+    strncpy(namedValue.name, "QGC_VIDRDY", sizeof(namedValue.name));
     namedValue.value = 1;
     
     // Encode and send

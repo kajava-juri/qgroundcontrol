@@ -107,12 +107,12 @@ Item {
             border.color: "white"
             border.width: 2
 
-            property real _heading: _activeVehicle ? _activeVehicle.heading.rawValue : 0
+            property real _heading: root._activeVehicle ? root._activeVehicle.heading.rawValue : 0
 
             CustomAttitudeWidget {
                 anchors.centerIn: parent
                 size: Math.min(parent.width, parent.height) * 0.75
-                vehicle: _activeVehicle
+                vehicle: root._activeVehicle
                 showHeading:        false
             }
 
@@ -148,7 +148,7 @@ Item {
                 QGCLabel {
                     id: headingLabel
                     anchors.centerIn: parent
-                    text: _heading.toFixed(0) + "°"
+                    text: root._activeVehicle ? root._activeVehicle.heading.rawValue.toFixed(0) + "°" : "---"
                     color: "cyan"
                     font.pointSize: ScreenTools.smallFontPointSize
                     font.bold: true
@@ -238,6 +238,107 @@ Item {
                         color: _activeVehicle && _activeVehicle.gps.count.rawValue >= 6 ? "lime" : "red"
                         font.pixelSize: ScreenTools.smallFontPointSize
                         font.bold: true
+                    }
+                }
+                
+                Rectangle { Layout.fillWidth: true; height: 1; color: "gray" }
+                
+                QGCLabel {
+                    text: "RTK Status"
+                    font.bold: true
+                    color: "cyan"
+                }
+                
+                // RTK Fix Type
+                Row {
+                    spacing: ScreenTools.defaultFontPixelWidth
+                    QGCLabel {
+                        text: "Fix:"
+                        color: "white"
+                        font.pixelSize: ScreenTools.smallFontPointSize
+                    }
+                    QGCLabel {
+                        property string fixTypeText: {
+                            if (!dataController) return "N/A"
+                            switch(dataController.rtkFix) {
+                                case 0: return "Invalid"
+                                case 1: return "GPS Fix"
+                                case 2: return "DGNSS"
+                                case 3: return "N/A"
+                                case 4: return "RTK Fixed"
+                                case 5: return "RTK Float"
+                                case 6: return "INS DR"
+                                default: return "Unknown"
+                            }
+                        }
+                        text: fixTypeText
+                        color: {
+                            if (!dataController) return "gray"
+                            if (dataController.rtkFix === 4) return "lime"   // RTK Fixed - best
+                            if (dataController.rtkFix === 5) return "yellow" // RTK Float - good
+                            if (dataController.rtkFix === 2) return "orange" // DGNSS - ok
+                            if (dataController.rtkFix === 1) return "orange" // GPS - ok
+                            if (dataController.rtkFix === 6) return "orange" // INS Dead reckoning
+                            return "red"  // Invalid or N/A
+                        }
+                        font.pixelSize: ScreenTools.smallFontPointSize
+                        font.bold: true
+                    }
+                }
+                
+                // RTK Satellites
+                Row {
+                    spacing: ScreenTools.defaultFontPixelWidth
+                    QGCLabel {
+                        text: "RTK Sats:"
+                        color: "white"
+                        font.pixelSize: ScreenTools.smallFontPointSize
+                    }
+                    QGCLabel {
+                        text: dataController ? dataController.rtkSats + " sats" : "---"
+                        color: dataController && dataController.rtkSats >= 10 ? "lime" : "orange"
+                        font.pixelSize: ScreenTools.smallFontPointSize
+                        font.bold: true
+                    }
+                }
+                
+                // RTK HDOP
+                Row {
+                    spacing: ScreenTools.defaultFontPixelWidth
+                    QGCLabel {
+                        text: "HDOP:"
+                        color: "white"
+                        font.pixelSize: ScreenTools.smallFontPointSize
+                    }
+                    QGCLabel {
+                        text: dataController ? dataController.rtkHdop.toFixed(2) : "---"
+                        color: {
+                            if (!dataController) return "gray"
+                            if (dataController.rtkHdop < 1.0) return "lime"
+                            if (dataController.rtkHdop < 2.0) return "yellow"
+                            return "orange"
+                        }
+                        font.pixelSize: ScreenTools.smallFontPointSize
+                        font.bold: true
+                    }
+                }
+                
+                // RTK Position
+                Row {
+                    spacing: ScreenTools.defaultFontPixelWidth
+                    QGCLabel {
+                        text: "RTK Pos:"
+                        color: "white"
+                        font.pixelSize: ScreenTools.smallFontPointSize
+                    }
+                    QGCLabel {
+                        text: dataController ? 
+                              dataController.rtkLat.toFixed(6) + ", " + dataController.rtkLon.toFixed(6) : "---"
+                        color: "lime"
+                        font.pixelSize: ScreenTools.smallFontPointSize
+                        font.bold: true
+                        elide: Text.ElideMiddle
+                        width: parent.parent.width * 0.6
                     }
                 }
 

@@ -27,6 +27,13 @@
             "max":       300
         },
         {
+            "name":      "noTimeout",
+            "shortDesc": "No timeout (run indefinitely)",
+            "longDesc":  "When enabled, data collection runs indefinitely without timeout",
+            "type":      "bool",
+            "default":   false
+        },
+        {
             "name":      "enableVoxlLogging",
             "shortDesc": "Enable VOXL logging",
             "longDesc":  "Enable logging from VOXL system",
