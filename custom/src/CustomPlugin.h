@@ -37,8 +37,8 @@ public:
 
     // Overrides from CustomFlyViewOptions
 
-    /// This custom build has it's own custom instrument panel. Don't show regular one.
-    bool showInstrumentPanel() const final { return false; }
+    /// Show the default instrument panel with attitude/heading widgets
+    bool showInstrumentPanel() const final { return true; }
     /// This custom build does not support conecting multiple vehicles to it.
     /// This in turn simplifies various parts of the QGC ui.
     bool showMultiVehicleList() const final { return false; }

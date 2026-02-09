@@ -20,6 +20,7 @@
     <file alias="QGroundControl/FlyView/CustomGuidedActionsController.qml">src/CustomGuidedActionsController.qml</file>
     <file alias="QGroundControl/FlyView/FlyViewCustomLayer.qml">src/FlyViewCustomLayer.qml</file>
     <file alias="QGroundControl/FlyView/FlyViewToolStripActionList.qml">src/FlyViewToolStripActionList.qml</file>
+    <file alias="QGroundControl/FlyView/FlyViewBottomRightRowLayout.qml">qml/FlyViewBottomRightRowLayout.qml</file>
     <file alias="DataCollectionDialog.qml">src/DataCollectionDialog.qml</file>
     <file alias="QGroundControl/Toolbar/DataCollectionIndicator.qml">src/DataCollectionIndicator.qml</file>
   </qresource>
