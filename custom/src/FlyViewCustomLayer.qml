@@ -124,32 +124,32 @@ Item {
             spacing: 2
 
             // RGB Video
-            Rectangle {
-                width: parent.width / 2 - 1
-                height: parent.height
-                color: "black"
-                border.color: "green"
-                border.width: 1
+            // Rectangle {
+            //     width: parent.width / 2 - 1
+            //     height: parent.height
+            //     color: "black"
+            //     border.color: "green"
+            //     border.width: 1
 
-                // Only create video item when visible to avoid conflicts with grid mode
-                Loader {
-                    anchors.fill: parent
-                    active: dualVideoWidget.visible
-                    sourceComponent: GstGLQt6VideoItem {
-                        id: rgbVideoItem
-                        objectName: "customRgbVideo"
-                    }
-                }
+            //     // Only create video item when visible to avoid conflicts with grid mode
+            //     Loader {
+            //         anchors.fill: parent
+            //         active: dualVideoWidget.visible
+            //         sourceComponent: GstGLQt6VideoItem {
+            //             id: rgbVideoItem
+            //             objectName: "customRgbVideo"
+            //         }
+            //     }
 
-                Text {
-                    anchors.top: parent.top
-                    anchors.left: parent.left
-                    text: "RGB Camera"
-                    color: "white"
-                    horizontalAlignment: Text.AlignHCenter
-                    z: 1  // Draw on top of video
-                }
-            }
+            //     Text {
+            //         anchors.top: parent.top
+            //         anchors.left: parent.left
+            //         text: "RGB Camera"
+            //         color: "white"
+            //         horizontalAlignment: Text.AlignHCenter
+            //         z: 1  // Draw on top of video
+            //     }
+            // }
 
             // Thermal Video
             Rectangle {

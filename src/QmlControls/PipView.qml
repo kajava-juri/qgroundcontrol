@@ -22,6 +22,8 @@ Item {
     property var    item1:                  null    // Required
     property var    item2:                  null    // Optional, may come and go
     property string item1IsFullSettingsKey          // Settings key to save whether item1 was saved in full mode
+    property bool   item1IsFullDefault:     true    // Default state for item1 (true = fullscreen, false = PIP)
+    property string resizeCorner:           "topRight"  // Which corner has resize: "topRight" or "topLeft"
     property bool   show:                   true
 
     readonly property string _pipExpandedSettingsKey: "IsPIPVisible"
@@ -50,15 +52,15 @@ Item {
     }
 
     function _initForItems() {
-        var item1IsFull = QGroundControl.loadBoolGlobalSetting(item1IsFullSettingsKey, true)
+        var item1IsFull = QGroundControl.loadBoolGlobalSetting(item1IsFullSettingsKey, item1IsFullDefault)
         if (item1 && item2) {
             item1.pipState.state = item1IsFull ? item1.pipState.fullState : item1.pipState.pipState
             item2.pipState.state = item1IsFull ? item2.pipState.pipState : item2.pipState.fullState
             _fullItem = item1IsFull ? item1 : item2
             _pipOrWindowItem = item1IsFull ? item2 : item1
         } else {
-            item1.pipState.state = item1.pipState.fullState
-            _fullItem = item1
+            item1.pipState.state = item1.pipState.pipState
+            _fullItem = item2
             _pipOrWindowItem = null
         }
         _setPipIsExpanded(QGroundControl.loadBoolGlobalSetting(_pipExpandedSettingsKey, true))
@@ -122,14 +124,17 @@ Item {
         preventStealing:    true
         cursorShape:        Qt.PointingHandCursor
 
-        property real initialX:     0
-        property real initialWidth: 0
+        property real initialX:         0
+        property real initialWidth:     0
+        property real initialParentX:   0  // Track mouse position in parent coordinates
 
         onPressed: (mouse) => {
             // Remove the anchor so the our mouse coordinates stay in the same original place for drag tracking
             pipResize.anchors.fill = undefined
-            pipResize.initialX = mouse.x
             pipResize.initialWidth = _root.width
+            // Get mouse position in parent coordinates for consistent tracking
+            var parentPos = mapToItem(_root.parent, mouse.x, mouse.y)
+            pipResize.initialParentX = parentPos.x
         }
 
         onReleased: pipResize.anchors.fill = pipResizeIcon
@@ -138,7 +143,13 @@ Item {
         onPositionChanged: (mouse) => {
             if (pipResize.pressed) {
                 var parentWidth = _root.parent.width
-                var newWidth = pipResize.initialWidth + mouse.x - pipResize.initialX
+                // Calculate delta in parent coordinates
+                var parentPos = mapToItem(_root.parent, mouse.x, mouse.y)
+                var delta = parentPos.x - pipResize.initialParentX
+                // For left resize corner, invert delta (drag left = bigger, drag right = smaller)
+                var newWidth = resizeCorner === "topLeft" 
+                    ? pipResize.initialWidth - delta 
+                    : pipResize.initialWidth + delta
                 if (newWidth < parentWidth * _maxSize && newWidth > parentWidth * _minSize) {
                     _pipSize = newWidth
                 }
@@ -152,12 +163,14 @@ Item {
         source:         "/qmlimages/pipResize.svg"
         fillMode:       Image.PreserveAspectFit
         mipmap:         true
-        anchors.right:  parent.right
+        anchors.right:  resizeCorner === "topRight" ? parent.right : undefined
+        anchors.left:   resizeCorner === "topLeft" ? parent.left : undefined
         anchors.top:    parent.top
         visible:        _isExpanded && (ScreenTools.isMobile || pipMouseArea.containsMouse)
         height:         ScreenTools.defaultFontPixelHeight * 2.5
         width:          ScreenTools.defaultFontPixelHeight * 2.5
         sourceSize.height:  height
+        mirror:         resizeCorner === "topLeft"  // Flip icon horizontally for left side
     }
 
     // Check min/max constraints on pip size when when parent is resized
@@ -184,7 +197,8 @@ Item {
         source:         "/qmlimages/PiP.svg"
         mipmap:         true
         fillMode:       Image.PreserveAspectFit
-        anchors.left:   parent.left
+        anchors.left:   resizeCorner === "topRight" ? parent.left : undefined
+        anchors.right:  resizeCorner === "topLeft" ? parent.right : undefined
         anchors.top:    parent.top
         visible:        _isExpanded && !ScreenTools.isMobile && pipMouseArea.containsMouse
         height:         ScreenTools.defaultFontPixelHeight * 2.5

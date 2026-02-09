@@ -24,6 +24,8 @@ import QGroundControl.FlightMap
 import QGroundControl.UTMSP
 import QGroundControl.Viewer3D
 
+import org.freedesktop.gstreamer.Qt6GLVideoItem
+
 Item {
     id: _root
 
@@ -105,6 +107,67 @@ Item {
             pipView:    _pipView
         }
 
+        Item {
+            id: customStreamControl
+            
+            property Item pipView: _pipView2
+            property Item pipState: customStreamPipState
+            property bool streamActive: false  // Track if stream is active
+
+            PipState {
+                id:         customStreamPipState
+                pipView:    customStreamControl.pipView
+                isDark:     true
+            }
+            
+            Loader {
+                id: videoLoader
+                anchors.fill: parent
+                sourceComponent: rgbComponent  // Default
+            }
+            
+            Component {
+                id: rgbComponent
+                GstGLQt6VideoItem {
+                    id: rgbVideoItem
+                    objectName: "customRgbVideo"
+                }
+            }
+            
+            // Component {
+            //     id: thermalComponent
+            //     GstGLQt6VideoItem {
+            //         objectName: "customThermalVideo"
+            //     }
+            // }
+
+            // Black box overlay when stream is not active
+            Rectangle {
+                anchors.fill: parent
+                color: "black"
+                visible: !customStreamControl.streamActive
+                z: 1  // Above video but below other UI elements
+            }
+
+            // Listen to stream state changes from CustomVideoManager
+            Connections {
+                target: QGroundControl.corePlugin.customVideoManager
+
+                function onStreamStateChanged(streamIndex, active) {
+                    if (streamIndex === 0) {  // RGB stream
+                        customStreamControl.streamActive = active
+                    }
+                }
+            }
+
+            Component.onCompleted: {
+                // Initialize stream state
+                if (QGroundControl.corePlugin.customVideoManager) {
+                    customStreamControl.streamActive = QGroundControl.corePlugin.customVideoManager.isStreamActive(0)
+                }
+            }
+        }
+
         PipView {
             id:                     _pipView
             anchors.left:           parent.left
@@ -122,9 +185,38 @@ Item {
             property real bottomEdgeLeftInset: visible ? height + anchors.margins : 0
         }
 
+        // Dummy item for custom stream PipView item2
+        Item {
+            id: customStreamDummy
+            
+            property Item pipState: customStreamDummyPipState
+            
+            PipState {
+                id:         customStreamDummyPipState
+                pipView:    _pipView2
+                isDark:     false
+            }
+        }
+
+        PipView {
+            id:                     _pipView2
+            anchors.right:          parent.right
+            anchors.bottom:         parent.bottom
+            anchors.margins:        _toolsMargin
+            item1IsFullSettingsKey: "CustomStreamIsFullscreen"
+            item1IsFullDefault:     true   // Start in fullscreen mode (grid needs easy access)
+            resizeCorner:           "topLeft"  // Resize from top-left since on right side
+            item1:                  customStreamControl
+            item2:                  customStreamDummy
+            show:                   true
+            z:                      QGroundControl.zOrderWidgets
+            visible:                !_gridModeActive  // Hide when grid mode active
+        }
+
         // New Grid View
         Loader {
             id:             gridView
+            objectName:     "gridView"
             anchors.fill:   parent
             anchors.top: parent.top
             anchors.topMargin: toolbar.height
@@ -254,7 +346,7 @@ Item {
                 // Give Loaders time to create/destroy widgets, then reinitialize CustomVideoManager
                 Qt.callLater(function() {
                     if (QGroundControl.corePlugin.customVideoManager) {
-                        QGroundControl.corePlugin.customVideoManager.reinitializeWidgets()
+                        QGroundControl.corePlugin.customVideoManager.reinitializeWidgets(_gridModeActive)
                     }
                 })
             }

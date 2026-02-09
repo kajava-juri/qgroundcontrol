@@ -36,7 +36,7 @@ public:
 
     void init(QQuickWindow* mainWindow);
     void clearAllStreamInfo();
-    Q_INVOKABLE void reinitializeWidgets();  // Re-find widgets after mode change
+    Q_INVOKABLE void reinitializeWidgets(bool gridMode = false);  // Re-find widgets after mode change
 
     friend class FinishCustomVideoInitialization;
 
@@ -91,6 +91,7 @@ private:
         bool decoding = false;
         QTimer* decodingTimeoutTimer = nullptr;
         bool allowAutoRestart = true;
+        int restartAttempts = 0;  // For exponential backoff in noisy WiFi
         QMetaObject::Connection restartConnection;  // Connection for deferred restart
     };
 

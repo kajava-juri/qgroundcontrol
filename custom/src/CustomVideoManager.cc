@@ -69,17 +69,35 @@ void CustomVideoManager::_initAfterQmlIsReady()
     qCWarning(CustomVideoManagerLog) << "Receivers initialized, waiting for VIDEO_STREAM_INFORMATION messages";
 }
 
-void CustomVideoManager::reinitializeWidgets()
+void CustomVideoManager::reinitializeWidgets(bool gridMode)
 {
     if (!_mainWindow) {
         qCCritical(CustomVideoManagerLog) << "reinitializeWidgets called with NULL mainWindow";
         return;
     }
 
-    qCWarning(CustomVideoManagerLog) << "reinitializeWidgets - re-finding video widgets after mode change";
+    qCWarning(CustomVideoManagerLog) << "reinitializeWidgets - re-finding video widgets, gridMode:" << gridMode;
 
-    QQuickItem* rgbWidget = _mainWindow->findChild<QQuickItem*>("customRgbVideo");
-    QQuickItem* thermalWidget = _mainWindow->findChild<QQuickItem*>("customThermalVideo");
+    QQuickItem* rgbWidget = nullptr;
+    QQuickItem* thermalWidget = nullptr;
+
+    if (gridMode) {
+        // In grid mode, search within the gridView component
+        QQuickItem* gridView = _mainWindow->findChild<QQuickItem*>("gridView");
+        if (gridView) {
+            qCWarning(CustomVideoManagerLog) << "Searching for widgets in gridView";
+            rgbWidget = gridView->findChild<QQuickItem*>("customRgbVideo");
+            thermalWidget = gridView->findChild<QQuickItem*>("customThermalVideo");
+        } else {
+            qCWarning(CustomVideoManagerLog) << "gridView not found, falling back to global search";
+            rgbWidget = _mainWindow->findChild<QQuickItem*>("customRgbVideo");
+            thermalWidget = _mainWindow->findChild<QQuickItem*>("customThermalVideo");
+        }
+    } else {
+        // In overlay mode, search globally (will find PipView widgets)
+        rgbWidget = _mainWindow->findChild<QQuickItem*>("customRgbVideo");
+        thermalWidget = _mainWindow->findChild<QQuickItem*>("customThermalVideo");
+    }
 
     qCWarning(CustomVideoManagerLog) << "Found widgets - RGB:" << rgbWidget << "Thermal:" << thermalWidget;
 
@@ -326,9 +344,13 @@ void CustomVideoManager::_setupReceiver(int streamIndex, QQuickItem* widget)
             _streams[streamIndex].decoding = decoding;
             emit streamDecodingChanged(streamIndex, decoding);
             
-            // Stop the timeout timer if decoding started successfully
-            if (decoding && _streams[streamIndex].decodingTimeoutTimer) {
-                _streams[streamIndex].decodingTimeoutTimer->stop();
+            // Stop the timeout timer and reset backoff counter if decoding started successfully
+            if (decoding) {
+                if (_streams[streamIndex].decodingTimeoutTimer) {
+                    _streams[streamIndex].decodingTimeoutTimer->stop();
+                }
+                _streams[streamIndex].restartAttempts = 0;  // Reset backoff on success
+                qCDebug(CustomVideoManagerLog) << "Stream" << streamIndex << "decoding successfully - reset restart counter";
             }
     });
 
@@ -339,7 +361,7 @@ void CustomVideoManager::_setupReceiver(int streamIndex, QQuickItem* widget)
                 qCWarning(CustomVideoManagerLog) << "Stream" << streamIndex << "starting decoding";
                 _streams[streamIndex].receiver->startDecoding(_streams[streamIndex].sink);
                 
-                // Start a timer - if decoding doesn't start in 10 seconds, restart
+                // Start a timer - if decoding doesn't start in 30 seconds, restart
                 if (!_streams[streamIndex].decodingTimeoutTimer) {
                     _streams[streamIndex].decodingTimeoutTimer = new QTimer(this);
                     _streams[streamIndex].decodingTimeoutTimer->setSingleShot(true);
@@ -349,12 +371,12 @@ void CustomVideoManager::_setupReceiver(int streamIndex, QQuickItem* widget)
                             _streams[streamIndex].receiver->started() &&
                             !_streams[streamIndex].uri.isEmpty()) {  // ← Check URI not empty
                             qCWarning(CustomVideoManagerLog) << "Stream" << streamIndex 
-                                                            << "decoding timeout after 10s - restarting";
+                                                            << "decoding timeout after 30s - restarting";
                             _restartVideo(streamIndex);
                         }
                     });
                 }
-                _streams[streamIndex].decodingTimeoutTimer->start(10000); // 10 second timeout
+                _streams[streamIndex].decodingTimeoutTimer->start(30000); // 30 second timeout for noisy WiFi
             } else {
                 qCWarning(CustomVideoManagerLog) << "Stream" << streamIndex << "start FAILED with status:" << status;
             }
@@ -365,13 +387,22 @@ void CustomVideoManager::_setupReceiver(int streamIndex, QQuickItem* widget)
         _streams[streamIndex].receiver->setStarted(false);
         if (status == VideoReceiver::STATUS_INVALID_URL) {
             qCDebug(CustomVideoManagerLog) << "Invalid video URL. Not restarting";
+            _streams[streamIndex].restartAttempts = 0;  // Reset on invalid URL
         } else if (!_streams[streamIndex].allowAutoRestart) {
             qCDebug(CustomVideoManagerLog) << "Auto-restart disabled for stream" << streamIndex;
             _streams[streamIndex].allowAutoRestart = true;  // Re-enable for next time
+            _streams[streamIndex].restartAttempts = 0;  // Reset counter
         } else if (_streams[streamIndex].uri.isEmpty()) {
             qCDebug(CustomVideoManagerLog) << "URI is empty, not restarting stream" << streamIndex;
+            _streams[streamIndex].restartAttempts = 0;  // Reset counter
         } else {
-            QTimer::singleShot(1000, _streams[streamIndex].receiver, [this, streamIndex]() {
+            // Exponential backoff: 2s, 4s, 8s, 16s, max 30s
+            _streams[streamIndex].restartAttempts++;
+            int delayMs = qMin(2000 * (1 << (_streams[streamIndex].restartAttempts - 1)), 30000);
+            qCDebug(CustomVideoManagerLog) << "Scheduling restart for stream" << streamIndex 
+                                            << "attempt" << _streams[streamIndex].restartAttempts
+                                            << "after" << delayMs << "ms";
+            QTimer::singleShot(delayMs, _streams[streamIndex].receiver, [this, streamIndex]() {
                 qCDebug(CustomVideoManagerLog) << "Restarting video receiver" 
                                                 << _streams[streamIndex].receiver->name() 
                                                 << _streams[streamIndex].receiver->uri();
@@ -420,7 +451,7 @@ void CustomVideoManager::_startReceiver(int streamIndex)
                                       << "receiver:" << stream.receiver
                                       << "sink:" << stream.sink;
     stream.receiver->setUri(stream.uri);
-    stream.receiver->start(5000);  // 5 second timeout
+    stream.receiver->start(30000);  // 30 second timeout for noisy WiFi
     qCWarning(CustomVideoManagerLog) << "Stream" << streamIndex << "start() called successfully";
 }
 
