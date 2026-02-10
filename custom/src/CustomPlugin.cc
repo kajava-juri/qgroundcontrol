@@ -32,6 +32,7 @@ const QVariantList &CustomPlugin::toolBarIndicators()
         toolBarIndicatorList = QGCCorePlugin::toolBarIndicators();
         // Add custom data collection indicator (always visible, vehicle-independent)
         toolBarIndicatorList.append(QVariant::fromValue(QUrl::fromUserInput("qrc:/qml/QGroundControl/Toolbar/DataCollectionIndicator.qml")));
+        toolBarIndicatorList.append(QVariant::fromValue(QUrl::fromUserInput("qrc:/qml/QGroundControl/Toolbar/DCAction.qml")));
     }
     return toolBarIndicatorList;
 }

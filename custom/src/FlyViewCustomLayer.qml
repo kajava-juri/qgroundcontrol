@@ -108,7 +108,7 @@ Item {
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.margins: ScreenTools.defaultFontPixelWidth
-        width: 640
+        width: 320
         height: 240
         color: "black"
         border.color: "white"
@@ -153,7 +153,7 @@ Item {
 
             // Thermal Video
             Rectangle {
-                width: parent.width / 2 - 1
+                width: parent.width - 1
                 height: parent.height
                 color: "black"
                 border.color: "red"
@@ -183,8 +183,8 @@ Item {
         // Detailed Status Panel (for debugging)
     Rectangle {
         anchors.top: parent.top
-        anchors.left: parent.left
-        anchors.margins: 258
+        anchors.right: dualVideoWidget.left
+        anchors.rightMargin: 16
         width: debugColumn.width + 16
         height: debugColumn.height + 16
         color: "black"
@@ -294,55 +294,55 @@ Item {
     // }
 
 
-    Column {
-        anchors.right: parent.right
-        anchors.top: parent.top
-        anchors.topMargin: 258
-        anchors.margins: ScreenTools.defaultFontPixelWidth
-        spacing: ScreenTools.defaultFontPixelHeight
+    // Column {
+    //     anchors.right: parent.right
+    //     anchors.top: parent.top
+    //     anchors.topMargin: 258
+    //     anchors.margins: ScreenTools.defaultFontPixelWidth
+    //     spacing: ScreenTools.defaultFontPixelHeight
 
-        QGCButton {
-            text: qsTr("Data Collection Settings")
-            onClicked: {
-                var dialog = dataCollectionDialogComponent.createObject(mainWindow, {
-                    "_customSettings": QGroundControl.corePlugin.customSettings
-                })
-                dialog.open()
-            }
-        }
+    //     QGCButton {
+    //         text: qsTr("Data Collection Settings")
+    //         onClicked: {
+    //             var dialog = dataCollectionDialogComponent.createObject(mainWindow, {
+    //                 "_customSettings": QGroundControl.corePlugin.customSettings
+    //             })
+    //             dialog.open()
+    //         }
+    //     }
 
-        Rectangle {
-            width: ScreenTools.defaultFontPixelWidth * 18
-            height: ScreenTools.defaultFontPixelHeight * 2
-            color: dataController.isCollecting ? "#e03131" : "#12b886"
-            radius: 4
+    //     Rectangle {
+    //         width: ScreenTools.defaultFontPixelWidth * 18
+    //         height: ScreenTools.defaultFontPixelHeight * 2
+    //         color: dataController.isCollecting ? "#e03131" : "#12b886"
+    //         radius: 4
             
-            Text {
-                anchors.centerIn: parent
-                text: dataController.isCollecting ? "Stop Recording" : "Start Recording"
-                color: "white"
-            }
+    //         Text {
+    //             anchors.centerIn: parent
+    //             text: dataController.isCollecting ? "Stop Recording" : "Start Recording"
+    //             color: "white"
+    //         }
             
-            MouseArea {
-                anchors.fill: parent
-                onClicked: dataController.toggleRecording()
-            }
-        }
+    //         MouseArea {
+    //             anchors.fill: parent
+    //             onClicked: dataController.toggleRecording()
+    //         }
+    //     }
 
-        // Text {
-        //     text: "Test Value: " + dataController.testValue
-        //     color: "white"
-        //     font.pixelSize: 24
-        // }
+    //     // Text {
+    //     //     text: "Test Value: " + dataController.testValue
+    //     //     color: "white"
+    //     //     font.pixelSize: 24
+    //     // }
         
 
-        Component {
-            id: dataCollectionDialogComponent
-            DataCollectionDialog {
-                // _customSettings passed via createObject properties
-            }
-        }
-    }
+    //     Component {
+    //         id: dataCollectionDialogComponent
+    //         DataCollectionDialog {
+    //             // _customSettings passed via createObject properties
+    //         }
+    //     }
+    // }
 
     // This is an example of how you can use parent tool insets to position an element on the custom fly view layer
     // - we use parent topEdgeLeftInset to position the widget below the toolstrip
@@ -366,71 +366,71 @@ Item {
 
     //-------------------------------------------------------------------------
     //-- Heading Indicator
-    Rectangle {
-        id:                         compassBar
-        height:                     ScreenTools.defaultFontPixelHeight * 1.5
-        width:                      ScreenTools.defaultFontPixelWidth  * 50
-        anchors.bottom:             parent.bottom
-        anchors.bottomMargin:       _toolsMargin
-        color:                      "#DEDEDE"
-        radius:                     2
-        clip:                       true
-        anchors.horizontalCenter:   parent.horizontalCenter
-        Repeater {
-            model: 720
-            QGCLabel {
-                function _normalize(degrees) {
-                    var a = degrees % 360
-                    if (a < 0) a += 360
-                    return a
-                }
-                property int _startAngle: modelData + 180 + _heading
-                property int _angle: _normalize(_startAngle)
-                anchors.verticalCenter: parent.verticalCenter
-                x:              visible ? ((modelData * (compassBar.width / 360)) - (width * 0.5)) : 0
-                visible:        _angle % 45 == 0
-                color:          "#75505565"
-                font.pointSize: ScreenTools.smallFontPointSize
-                text: {
-                    switch(_angle) {
-                    case 0:     return "N"
-                    case 45:    return "NE"
-                    case 90:    return "E"
-                    case 135:   return "SE"
-                    case 180:   return "S"
-                    case 225:   return "SW"
-                    case 270:   return "W"
-                    case 315:   return "NW"
-                    }
-                    return ""
-                }
-            }
-        }
-    }
-    Rectangle {
-        id:                         headingIndicator
-        height:                     ScreenTools.defaultFontPixelHeight
-        width:                      ScreenTools.defaultFontPixelWidth * 4
-        color:                      qgcPal.windowShadeDark
-        anchors.top:                compassBar.top
-        anchors.topMargin:          -headingIndicator.height / 2
-        anchors.horizontalCenter:   parent.horizontalCenter
-        QGCLabel {
-            text:                   _heading
-            color:                  qgcPal.text
-            font.pointSize:         ScreenTools.smallFontPointSize
-            anchors.centerIn:       parent
-        }
-    }
-    Image {
-        id:                         compassArrowIndicator
-        height:                     _indicatorsHeight
-        width:                      height
-        source:                     "/custom/img/compass_pointer.svg"
-        fillMode:                   Image.PreserveAspectFit
-        sourceSize.height:          height
-        anchors.top:                compassBar.bottom
-        anchors.topMargin:          -height / 2
-        anchors.horizontalCenter:   parent.horizontalCenter
-    }
+    // Rectangle {
+    //     id:                         compassBar
+    //     height:                     ScreenTools.defaultFontPixelHeight * 1.5
+    //     width:                      ScreenTools.defaultFontPixelWidth  * 50
+    //     anchors.bottom:             parent.bottom
+    //     anchors.bottomMargin:       _toolsMargin
+    //     color:                      "#DEDEDE"
+    //     radius:                     2
+    //     clip:                       true
+    //     anchors.horizontalCenter:   parent.horizontalCenter
+    //     Repeater {
+    //         model: 720
+    //         QGCLabel {
+    //             function _normalize(degrees) {
+    //                 var a = degrees % 360
+    //                 if (a < 0) a += 360
+    //                 return a
+    //             }
+    //             property int _startAngle: modelData + 180 + _heading
+    //             property int _angle: _normalize(_startAngle)
+    //             anchors.verticalCenter: parent.verticalCenter
+    //             x:              visible ? ((modelData * (compassBar.width / 360)) - (width * 0.5)) : 0
+    //             visible:        _angle % 45 == 0
+    //             color:          "#75505565"
+    //             font.pointSize: ScreenTools.smallFontPointSize
+    //             text: {
+    //                 switch(_angle) {
+    //                 case 0:     return "N"
+    //                 case 45:    return "NE"
+    //                 case 90:    return "E"
+    //                 case 135:   return "SE"
+    //                 case 180:   return "S"
+    //                 case 225:   return "SW"
+    //                 case 270:   return "W"
+    //                 case 315:   return "NW"
+    //                 }
+    //                 return ""
+    //             }
+    //         }
+    //     }
+    // }
+    // Rectangle {
+    //     id:                         headingIndicator
+    //     height:                     ScreenTools.defaultFontPixelHeight
+    //     width:                      ScreenTools.defaultFontPixelWidth * 4
+    //     color:                      qgcPal.windowShadeDark
+    //     anchors.top:                compassBar.top
+    //     anchors.topMargin:          -headingIndicator.height / 2
+    //     anchors.horizontalCenter:   parent.horizontalCenter
+    //     QGCLabel {
+    //         text:                   _heading
+    //         color:                  qgcPal.text
+    //         font.pointSize:         ScreenTools.smallFontPointSize
+    //         anchors.centerIn:       parent
+    //     }
+    // }
+    // Image {
+    //     id:                         compassArrowIndicator
+    //     height:                     _indicatorsHeight
+    //     width:                      height
+    //     source:                     "/custom/img/compass_pointer.svg"
+    //     fillMode:                   Image.PreserveAspectFit
+    //     sourceSize.height:          height
+    //     anchors.top:                compassBar.bottom
+    //     anchors.topMargin:          -height / 2
+    //     anchors.horizontalCenter:   parent.horizontalCenter
+    // }
 }

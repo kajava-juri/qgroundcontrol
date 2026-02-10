@@ -22,7 +22,7 @@ Item {
     TelemetryValuesBar {
         id:                     telemetryBar
         anchors.bottom:         parent.bottom
-        anchors.bottomMargin:   ScreenTools.defaultFontPixelWidth * 5.25
+        anchors.bottomMargin:   ScreenTools.defaultFontPixelWidth * 1.25
         anchors.right:          instrumentPanel.left
         anchors.rightMargin:    ScreenTools.defaultFontPixelWidth * 0.75
         extraWidth:             instrumentPanel.extraValuesWidth
@@ -33,7 +33,7 @@ Item {
     FlyViewInstrumentPanel {
         id:                     instrumentPanel
         anchors.bottom:         parent.bottom
-        anchors.bottomMargin:   ScreenTools.defaultFontPixelWidth * 6.25
+        anchors.bottomMargin:   ScreenTools.defaultFontPixelWidth * 1.25
         anchors.horizontalCenter: parent.horizontalCenter
         visible:                QGroundControl.corePlugin.options.flyView.showInstrumentPanel && _showSingleVehicleUI
     }

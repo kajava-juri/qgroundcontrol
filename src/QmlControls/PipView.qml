@@ -216,7 +216,8 @@ Item {
         source:         "/qmlimages/pipHide.svg"
         mipmap:         true
         fillMode:       Image.PreserveAspectFit
-        anchors.left:   parent.left
+        anchors.left:   resizeCorner === "topRight" ? parent.left : undefined
+        anchors.right:  resizeCorner === "topLeft" ? parent.right : undefined
         anchors.bottom: parent.bottom
         visible:        _isExpanded && (ScreenTools.isMobile || pipMouseArea.containsMouse)
         height:         ScreenTools.defaultFontPixelHeight * 2.5
@@ -230,7 +231,8 @@ Item {
 
     Rectangle {
         id:                     showPip
-        anchors.left :          parent.left
+        anchors.left :          resizeCorner === "topRight" ? parent.left : undefined
+        anchors.right:          resizeCorner === "topLeft" ? parent.right : undefined
         anchors.bottom:         parent.bottom
         height:                 ScreenTools.defaultFontPixelHeight * 2
         width:                  ScreenTools.defaultFontPixelHeight * 2
