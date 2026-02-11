@@ -8,7 +8,14 @@
  ****************************************************************************/
 
 #include "LogReplayLinkController.h"
+#include "LinkConfiguration.h"
+#include "MAVLinkProtocol.h"
+#include "MultiVehicleManager.h"
+#include "QGCApplication.h"
 #include "QGCLoggingCategory.h"
+#include "Vehicle.h"
+
+#include <QtCore/QFileInfo>
 
 QGC_LOGGING_CATEGORY(LogReplayLinkControllerLog, "Comms.LogReplayLinkController")
 
@@ -48,6 +55,7 @@ void LogReplayLinkController::setLink(LogReplayLink *link)
     if (link) {
         _link = link;
 
+        (void) connect(_link, &LogReplayLink::connected, this, &LogReplayLinkController::_linkConnected);
         (void) connect(_link, &LogReplayLink::logFileStats, this, &LogReplayLinkController::_logFileStats);
         (void) connect(_link, &LogReplayLink::playbackStarted, this, &LogReplayLinkController::_playbackStarted);
         (void) connect(_link, &LogReplayLink::playbackPaused, this, &LogReplayLinkController::_playbackPaused);
@@ -147,4 +155,90 @@ QString LogReplayLinkController::_secondsToHMS(uint32_t seconds)
     }
 
     return result;
+}
+
+void LogReplayLinkController::_linkConnected()
+{
+    qCDebug(LogReplayLinkControllerLog) << "Log replay connected";
+    _notifyExternalComponent(true);
+}
+
+void LogReplayLinkController::_linkDisconnected()
+{
+    qCDebug(LogReplayLinkControllerLog) << "Log replay disconnected";
+    _notifyExternalComponent(false);
+    setLink(nullptr);
+}
+
+void LogReplayLinkController::_notifyExternalComponent(bool sessionStarted)
+{
+    Vehicle* vehicle = MultiVehicleManager::instance()->activeVehicle();
+    if (!vehicle || !_link) {
+        qCDebug(LogReplayLinkControllerLog) << "No vehicle or link for notification";
+        return;
+    }
+
+    SharedLinkInterfacePtr sharedLink = vehicle->vehicleLinkManager()->primaryLink().lock();
+    if (!sharedLink) {
+        qCWarning(LogReplayLinkControllerLog) << "No primary link available";
+        return;
+    }
+
+    // Get log file name from link configuration
+    const SharedLinkConfigurationPtr config = _link->linkConfiguration();
+    const LogReplayConfiguration* logConfig = qobject_cast<const LogReplayConfiguration*>(config.get());
+    if (!logConfig) {
+        qCWarning(LogReplayLinkControllerLog) << "Could not get log configuration";
+        return;
+    }
+
+    const QString logFilePath = logConfig->logFilename();
+    const QFileInfo fileInfo(logFilePath);
+    QString logFileName = fileInfo.fileName();
+
+    // STATUSTEXT has 50 byte limit - need to fit "LOG_REPLAY_START:" (17 chars) + filename
+    const QString prefix = sessionStarted ? QStringLiteral("LOG_REPLAY_START:") : QStringLiteral("LOG_REPLAY_END:");
+    constexpr int maxStatusTextLen = 50;
+    const int maxFilenameLen = maxStatusTextLen - prefix.length() - 1;  // -1 for safety
+    
+    if (logFileName.length() > maxFilenameLen) {
+        // Truncate filename but keep extension
+        const QString extension = fileInfo.suffix();
+        const QString baseName = fileInfo.completeBaseName();
+        const int keepLen = maxFilenameLen - extension.length() - 4;  // -4 for "..." and dot
+        
+        if (keepLen > 0) {
+            logFileName = baseName.left(keepLen) + QStringLiteral("...") + extension;
+            qCWarning(LogReplayLinkControllerLog) << "Log filename truncated for MAVLink:" 
+                                                  << fileInfo.fileName() << "->" << logFileName;
+        } else {
+            // Filename is really long, just truncate brutally
+            logFileName = fileInfo.fileName().left(maxFilenameLen);
+            qCWarning(LogReplayLinkControllerLog) << "Log filename severely truncated:" << logFileName;
+        }
+    }
+
+    qCDebug(LogReplayLinkControllerLog) << "Notifying component 25:" 
+                                        << (sessionStarted ? "session started" : "session ended")
+                                        << "file:" << logFileName;
+
+    const QString statusMsg = prefix + logFileName;
+
+    mavlink_statustext_t statusText;
+    statusText.severity = MAV_SEVERITY_INFO;
+    statusText.id = 0;
+    statusText.chunk_seq = 0;
+    strncpy(statusText.text, qPrintable(statusMsg), sizeof(statusText.text) - 1);
+    statusText.text[sizeof(statusText.text) - 1] = '\0';
+
+    mavlink_message_t msg;
+    mavlink_msg_statustext_encode_chan(
+        MAVLinkProtocol::instance()->getSystemId(),
+        MAVLinkProtocol::getComponentId(),
+        sharedLink->mavlinkChannel(),
+        &msg,
+        &statusText
+    );
+
+    vehicle->sendMessageOnLinkThreadSafe(sharedLink.get(), msg);
 }

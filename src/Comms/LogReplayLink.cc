@@ -125,7 +125,7 @@ void LogReplayWorker::connectToLog()
     _isConnected = true;
     emit connected();
 
-    play();
+    // play();
 }
 
 void LogReplayWorker::disconnectFromLog()

@@ -15,6 +15,8 @@
 
 #include "LogReplayLink.h"
 
+class Vehicle;
+
 Q_DECLARE_LOGGING_CATEGORY(LogReplayLinkControllerLog)
 
 class LogReplayLinkController : public QObject
@@ -51,7 +53,8 @@ signals:
 
 private slots:
     void _currentLogTimeSecs(uint32_t secs);
-    void _linkDisconnected() { setLink(nullptr); }
+    void _linkConnected();
+    void _linkDisconnected();
     void _logFileStats(uint32_t logDurationSecs);
     void _playbackAtEnd();
     void _playbackPaused();
@@ -60,6 +63,7 @@ private slots:
 
 private:
     static QString _secondsToHMS(uint32_t seconds);
+    void _notifyExternalComponent(bool sessionStarted);
 
     bool _isPlaying = false;
     qreal _percentComplete = 0;

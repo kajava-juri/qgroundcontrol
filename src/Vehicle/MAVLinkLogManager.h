@@ -214,6 +214,7 @@ private:
     void _deleteLog(MAVLinkLogFiles *log);
     void _discardLog();
     QString _makeFilename(const QString &baseName) const;
+    void _notifyExternalComponent(bool recordingStarted, const QString &filename);
 
     static QHttpPart _createFormPart(QStringView name, QStringView value);
 

@@ -100,6 +100,9 @@ void DataCollectionController::startRecording() {
         emit isCollectingChanged();
         _sendHttpRequest("start");
         
+        // Don't send START notification yet - wait for Python to signal ready (vid_flags StreamsReady)
+        // This ensures Python's MAVLink listener is active before we send STATUSTEXT
+        
         // Start periodic stream info requests only if vehicle already connected
         if (_vehicle) {
             _startPeriodicStreamInfoRequest();
@@ -111,10 +114,10 @@ void DataCollectionController::startRecording() {
 void DataCollectionController::stopRecording() {
     qCDebug(DataCollectionControllerLog) << "Stop recording invoked";
     if (_isCollecting) {
-        // Send stop command first
+        // Send stop command first (before _handleCollectionEnd which will send END notification)
         _sendHttpRequest("stop");
         
-        // Perform full cleanup (stops streams, clears URIs, updates state)
+        // Perform full cleanup (sends END notification, stops streams, clears URIs, updates state)
         _handleCollectionEnd();
     }
 }
@@ -213,7 +216,7 @@ void DataCollectionController::_onActiveVehicleChanged(Vehicle* vehicle)
                 const QString name = QString::fromLatin1(namedValue.name,
                                     strnlen(namedValue.name, sizeof(namedValue.name)));
 
-                qCDebug(DataCollectionControllerLog) << "NAMED_VALUE_INT:" << name << "=" << namedValue.value;
+                qCWarning(DataCollectionControllerLog) << "🟢 NAMED_VALUE_INT:" << name << "=" << namedValue.value;
 
                 _handleNamedValue(name, QVariant::fromValue((qint64)namedValue.value));
             }
@@ -231,6 +234,11 @@ void DataCollectionController::_onActiveVehicleChanged(Vehicle* vehicle)
 
                 if (!plugin || !plugin->customVideoManager()) {
                     qCWarning(DataCollectionControllerLog) << "CustomPlugin or CustomVideoManager not available";
+                    return;
+                }
+                // if data collection is inactive, do not act. Current bug where periodic stream info request's response was received after collection ended and calling setStreamUri causes a stream to restart and GStreamer throws errors.
+                if (!plugin->dataCollectionController()->isCollecting()) {
+                    qCWarning(DataCollectionControllerLog) << "Data collection not active - ignoring stream info";
                     return;
                 }
                 
@@ -373,6 +381,24 @@ void DataCollectionController::_handleNamedValue(const QString& name, const QVar
         const bool ready = _vidFlags & StreamsReady;
         const bool active = _vidFlags & StreamsActive;
         const bool wasActive = prevFlags & StreamsActive;
+        const bool wasReady = prevFlags & StreamsReady;
+        
+        qCWarning(DataCollectionControllerLog) << "🔵 vid_flags received:"
+            << "value=" << _vidFlags
+            << "ready=" << ready << "(was:" << wasReady << ")"
+            << "active=" << active << "(was:" << wasActive << ")"
+            << "_isCollecting=" << _isCollecting;
+        
+        // Send START notification when Python first signals ready (StreamsReady flag set)
+        if (ready && _isCollecting) {
+            qCWarning(DataCollectionControllerLog) << "🔵 Condition met! Python signaled ready - sending START notification";
+            _notifyDataCollectionState(true);
+        } else if (_isCollecting) {
+            qCWarning(DataCollectionControllerLog) << "🔵 Start notification NOT sent:"
+                << "ready=" << ready
+                << "wasReady=" << wasReady
+                << "(need: ready=true && wasReady=false)";
+        }
         
         if (active && ready) {
             qCDebug(DataCollectionControllerLog) << "DATA COLLECTION IS READY - starting stream info polling";
@@ -425,6 +451,9 @@ void DataCollectionController::_handleCollectionEnd()
     }
     
     qCDebug(DataCollectionControllerLog) << "_handleCollectionEnd: Performing cleanup";
+    
+    // Send END notification BEFORE cleanup (Python might still be listening)
+    _notifyDataCollectionState(false);
     
     // Stop periodic stream info requests
     _stopPeriodicStreamInfoRequest();
@@ -571,4 +600,51 @@ void DataCollectionController::_streamInfoTimeout()
     
     qCDebug(DataCollectionControllerLog) << "Periodic stream info poll triggered";
     _requestStreamInfo();
+}
+
+// //-----------------------------------------------------------------------------
+void DataCollectionController::_notifyDataCollectionState(bool collectionStarted)
+{
+    qCWarning(DataCollectionControllerLog) << "🔴 _notifyDataCollectionState CALLED:" << (collectionStarted ? "START" : "END");
+    
+    if (!_vehicle) {
+        qCWarning(DataCollectionControllerLog) << "🔴 _notifyDataCollectionState: No active vehicle";
+        return;
+    }
+    
+    SharedLinkInterfacePtr sharedLink = _vehicle->vehicleLinkManager()->primaryLink().lock();
+    if (!sharedLink) {
+        qCWarning(DataCollectionControllerLog) << "🔴 _notifyDataCollectionState: No primary link";
+        return;
+    }
+    
+    const QString prefix = collectionStarted 
+        ? QStringLiteral("DATA_COLLECT_START") 
+        : QStringLiteral("DATA_COLLECT_END");
+    
+    qCWarning(DataCollectionControllerLog) << "🔴 Sending STATUSTEXT to component 25:"
+                                         << prefix
+                                         << "sys=" << MAVLinkProtocol::instance()->getSystemId()
+                                         << "comp=" << MAVLinkProtocol::getComponentId()
+                                         << "chan=" << sharedLink->mavlinkChannel();
+    
+    mavlink_statustext_t statusText;
+    statusText.severity = MAV_SEVERITY_INFO;
+    statusText.id = 0;
+    statusText.chunk_seq = 0;
+    strncpy(statusText.text, qPrintable(prefix), sizeof(statusText.text) - 1);
+    statusText.text[sizeof(statusText.text) - 1] = '\0';
+    
+    mavlink_message_t msg;
+    mavlink_msg_statustext_encode_chan(
+        MAVLinkProtocol::instance()->getSystemId(),
+        MAVLinkProtocol::getComponentId(),
+        sharedLink->mavlinkChannel(),
+        &msg,
+        &statusText
+    );
+    
+    _vehicle->sendMessageOnLinkThreadSafe(sharedLink.get(), msg);
+    
+    qCWarning(DataCollectionControllerLog) << "🔴 STATUSTEXT sent successfully";
 }

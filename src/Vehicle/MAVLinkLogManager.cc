@@ -13,6 +13,7 @@
 #include "SettingsManager.h"
 #include "AppSettings.h"
 #include "Vehicle.h"
+#include "MAVLinkProtocol.h"
 
 #include <QtCore/QDirIterator>
 #include <QtCore/QFile>
@@ -605,6 +606,12 @@ void MAVLinkLogManager::startLogging()
         return;
     }
 
+    // Notify external component about recording start
+    if (_logProcessor) {
+        const QFileInfo fileInfo(_logProcessor->fileName());
+        _notifyExternalComponent(true, fileInfo.fileName());
+    }
+
     _vehicle->startMavlinkLog();
     _logRunning = true;
     emit logRunningChanged();
@@ -619,6 +626,10 @@ void MAVLinkLogManager::stopLogging()
     if (!_logProcessor) {
         return;
     }
+
+    // Notify external component about recording end before cleanup
+    const QFileInfo fileInfo(_logProcessor->fileName());
+    _notifyExternalComponent(false, fileInfo.fileName());
 
     _logProcessor->close();
     if (_logProcessor->record()) {
@@ -908,4 +919,69 @@ QString MAVLinkLogManager::_makeFilename(const QString &baseName) const
     filePath += baseName;
     filePath += _ulogExtension;
     return filePath;
+}
+
+void MAVLinkLogManager::_notifyExternalComponent(bool recordingStarted, const QString &filename)
+{
+    if (!_vehicle) {
+        qCDebug(MAVLinkLogManagerLog) << "No vehicle for notification";
+        return;
+    }
+
+    SharedLinkInterfacePtr sharedLink = _vehicle->vehicleLinkManager()->primaryLink().lock();
+    if (!sharedLink) {
+        qCWarning(MAVLinkLogManagerLog) << "No primary link available";
+        return;
+    }
+
+    qCDebug(MAVLinkLogManagerLog) << "Notifying component 25:"
+                                  << (recordingStarted ? "recording started" : "recording ended")
+                                  << "file:" << filename;
+
+    // Send notification via STATUSTEXT
+    // Format: "LOG_RECORD_START:<filename>" or "LOG_RECORD_END:<filename>"
+    const QString prefix = recordingStarted 
+        ? QStringLiteral("LOG_RECORD_START:") 
+        : QStringLiteral("LOG_RECORD_END:");
+    
+    QString logFileName = filename;
+    constexpr int maxStatusTextLen = 50;
+    const int maxFilenameLen = maxStatusTextLen - prefix.length() - 1;
+    
+    if (logFileName.length() > maxFilenameLen) {
+        // Truncate filename but keep extension
+        const QFileInfo fileInfo(filename);
+        const QString extension = fileInfo.suffix();
+        const QString baseName = fileInfo.completeBaseName();
+        const int keepLen = maxFilenameLen - extension.length() - 4;  // -4 for "..." and dot
+        
+        if (keepLen > 0) {
+            logFileName = baseName.left(keepLen) + QStringLiteral("...") + extension;
+            qCWarning(MAVLinkLogManagerLog) << "Log filename truncated for MAVLink:"
+                                            << filename << "->" << logFileName;
+        } else {
+            logFileName = filename.left(maxFilenameLen);
+            qCWarning(MAVLinkLogManagerLog) << "Log filename severely truncated:" << logFileName;
+        }
+    }
+
+    const QString statusMsg = prefix + logFileName;
+
+    mavlink_statustext_t statusText;
+    statusText.severity = MAV_SEVERITY_INFO;
+    statusText.id = 0;
+    statusText.chunk_seq = 0;
+    strncpy(statusText.text, qPrintable(statusMsg), sizeof(statusText.text) - 1);
+    statusText.text[sizeof(statusText.text) - 1] = '\0';
+
+    mavlink_message_t msg;
+    mavlink_msg_statustext_encode_chan(
+        MAVLinkProtocol::instance()->getSystemId(),
+        MAVLinkProtocol::getComponentId(),
+        sharedLink->mavlinkChannel(),
+        &msg,
+        &statusText
+    );
+
+    _vehicle->sendMessageOnLinkThreadSafe(sharedLink.get(), msg);
 }
