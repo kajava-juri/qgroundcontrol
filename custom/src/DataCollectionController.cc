@@ -393,6 +393,7 @@ void DataCollectionController::_handleNamedValue(const QString& name, const QVar
         if (ready && _isCollecting) {
             qCWarning(DataCollectionControllerLog) << "🔵 Condition met! Python signaled ready - sending START notification";
             _notifyDataCollectionState(true);
+            _startPeriodicStreamInfoRequest();
         } else if (_isCollecting) {
             qCWarning(DataCollectionControllerLog) << "🔵 Start notification NOT sent:"
                 << "ready=" << ready
@@ -403,7 +404,7 @@ void DataCollectionController::_handleNamedValue(const QString& name, const QVar
         if (active && ready) {
             qCDebug(DataCollectionControllerLog) << "DATA COLLECTION IS READY - starting stream info polling";
             // trigger polling VIDEO_STREAM_INFORMATION
-            _startPeriodicStreamInfoRequest();
+            
         }
         
         // Detect end of collection: StreamsActive flag goes from 1 to 0
@@ -618,33 +619,21 @@ void DataCollectionController::_notifyDataCollectionState(bool collectionStarted
         return;
     }
     
-    const QString prefix = collectionStarted 
-        ? QStringLiteral("DATA_COLLECT_START") 
-        : QStringLiteral("DATA_COLLECT_END");
-    
-    qCWarning(DataCollectionControllerLog) << "🔴 Sending STATUSTEXT to component 25:"
-                                         << prefix
-                                         << "sys=" << MAVLinkProtocol::instance()->getSystemId()
-                                         << "comp=" << MAVLinkProtocol::getComponentId()
-                                         << "chan=" << sharedLink->mavlinkChannel();
-    
-    mavlink_statustext_t statusText;
-    statusText.severity = MAV_SEVERITY_INFO;
-    statusText.id = 0;
-    statusText.chunk_seq = 0;
-    strncpy(statusText.text, qPrintable(prefix), sizeof(statusText.text) - 1);
-    statusText.text[sizeof(statusText.text) - 1] = '\0';
-    
     mavlink_message_t msg;
-    mavlink_msg_statustext_encode_chan(
+    mavlink_named_value_int_t namedValue;
+    
+    namedValue.time_boot_ms = 0;
+    strncpy(namedValue.name, "QGC_DCSTATE", sizeof(namedValue.name));
+    // Match Python DcState enum: STARTING=2, STOPPING=4
+    namedValue.value = collectionStarted ? Starting : Stopping;  
+    
+    mavlink_msg_named_value_int_encode_chan(
         MAVLinkProtocol::instance()->getSystemId(),
         MAVLinkProtocol::getComponentId(),
         sharedLink->mavlinkChannel(),
         &msg,
-        &statusText
+        &namedValue
     );
     
     _vehicle->sendMessageOnLinkThreadSafe(sharedLink.get(), msg);
-    
-    qCWarning(DataCollectionControllerLog) << "🔴 STATUSTEXT sent successfully";
 }
