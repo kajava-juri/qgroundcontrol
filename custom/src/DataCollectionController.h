@@ -134,7 +134,8 @@ private:
     void _startPeriodicStreamInfoRequest();  // Start periodic requests
     void _stopPeriodicStreamInfoRequest();   // Stop periodic requests
     void _sendReadySignalToDataCollector();
-    void _notifyDataCollectionState(bool collectionStarted);  // Send STATUSTEXT to component 25
+    void _notifyDataCollectionState(bool collectionStarted);  // Send NAMED_VALUE_INT state to component 25
+    void _sendCollectionMetadata(bool collectionStarted);     // Send detailed data via TUNNEL
     
     QNetworkAccessManager _networkManager;
     QTimer _streamInfoTimer;            // Timer for periodic requests

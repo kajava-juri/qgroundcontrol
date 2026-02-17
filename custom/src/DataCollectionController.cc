@@ -9,6 +9,8 @@
 #include <QtNetwork/QNetworkAccessManager>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
+#include <QtCore/QStandardPaths>
+#include <QtCore/QDateTime>
 
 QGC_LOGGING_CATEGORY(DataCollectionControllerLog, "Custom.DataCollectionController")
 
@@ -50,7 +52,7 @@ void DataCollectionController::_sendHttpRequest(QString endpoint) {
 
     CustomPlugin* plugin = qobject_cast<CustomPlugin*>(QGCCorePlugin::instance());
     if (!plugin && !plugin->customSettings()) {
-        qCWarning(DataCollectionControllerLog) << "CustomPlugin or CustomSettings not available";
+        qCDebug(DataCollectionControllerLog) << "CustomPlugin or CustomSettings not available";
         return;
     }
     QString httpUrl = plugin->customSettings()->httpUrl()->rawValue().toString();
@@ -79,7 +81,7 @@ void DataCollectionController::_sendHttpRequest(QString endpoint) {
             QByteArray responseData = reply->readAll();
             qCDebug(DataCollectionControllerLog) << "HTTP request to" << endpoint << "succeeded. Response:" << responseData;
         } else {
-            qCWarning(DataCollectionControllerLog) << "HTTP request to" << endpoint << "failed. Error:" << reply->errorString();
+            qCDebug(DataCollectionControllerLog) << "HTTP request to" << endpoint << "failed. Error:" << reply->errorString();
             // Revert the isCollecting state on error
             if (endpoint == "start") {
                 _isCollecting = false;
@@ -216,7 +218,7 @@ void DataCollectionController::_onActiveVehicleChanged(Vehicle* vehicle)
                 const QString name = QString::fromLatin1(namedValue.name,
                                     strnlen(namedValue.name, sizeof(namedValue.name)));
 
-                qCWarning(DataCollectionControllerLog) << "🟢 NAMED_VALUE_INT:" << name << "=" << namedValue.value;
+                qCDebug(DataCollectionControllerLog) << "🟢 NAMED_VALUE_INT:" << name << "=" << namedValue.value;
 
                 _handleNamedValue(name, QVariant::fromValue((qint64)namedValue.value));
             }
@@ -393,6 +395,7 @@ void DataCollectionController::_handleNamedValue(const QString& name, const QVar
         if (ready && _isCollecting) {
             qCWarning(DataCollectionControllerLog) << "🔵 Condition met! Python signaled ready - sending START notification";
             _notifyDataCollectionState(true);
+            _sendCollectionMetadata(true);  // Send detailed metadata immediately after state
             _startPeriodicStreamInfoRequest();
         } else if (_isCollecting) {
             qCWarning(DataCollectionControllerLog) << "🔵 Start notification NOT sent:"
@@ -454,6 +457,8 @@ void DataCollectionController::_handleCollectionEnd()
     qCDebug(DataCollectionControllerLog) << "_handleCollectionEnd: Performing cleanup";
     
     // Send END notification BEFORE cleanup (Python might still be listening)
+    _sendCollectionMetadata(false);
+    // This must be sent last, it will trigger cleanup on external component side
     _notifyDataCollectionState(false);
     
     // Stop periodic stream info requests
@@ -606,16 +611,16 @@ void DataCollectionController::_streamInfoTimeout()
 // //-----------------------------------------------------------------------------
 void DataCollectionController::_notifyDataCollectionState(bool collectionStarted)
 {
-    qCWarning(DataCollectionControllerLog) << "🔴 _notifyDataCollectionState CALLED:" << (collectionStarted ? "START" : "END");
+    qCDebug(DataCollectionControllerLog) << "🔴 _notifyDataCollectionState CALLED:" << (collectionStarted ? "START" : "END");
     
     if (!_vehicle) {
-        qCWarning(DataCollectionControllerLog) << "🔴 _notifyDataCollectionState: No active vehicle";
+        qCDebug(DataCollectionControllerLog) << "🔴 _notifyDataCollectionState: No active vehicle";
         return;
     }
     
     SharedLinkInterfacePtr sharedLink = _vehicle->vehicleLinkManager()->primaryLink().lock();
     if (!sharedLink) {
-        qCWarning(DataCollectionControllerLog) << "🔴 _notifyDataCollectionState: No primary link";
+        qCDebug(DataCollectionControllerLog) << "🔴 _notifyDataCollectionState: No primary link";
         return;
     }
     
@@ -623,7 +628,7 @@ void DataCollectionController::_notifyDataCollectionState(bool collectionStarted
     mavlink_named_value_int_t namedValue;
     
     namedValue.time_boot_ms = 0;
-    strncpy(namedValue.name, "QGC_DCSTATE", sizeof(namedValue.name));
+    strncpy(namedValue.name, "QGC_DCSTAT", sizeof(namedValue.name));
     // Match Python DcState enum: STARTING=2, STOPPING=4
     namedValue.value = collectionStarted ? Starting : Stopping;  
     
@@ -636,4 +641,84 @@ void DataCollectionController::_notifyDataCollectionState(bool collectionStarted
     );
     
     _vehicle->sendMessageOnLinkThreadSafe(sharedLink.get(), msg);
+}
+
+// //-----------------------------------------------------------------------------
+void DataCollectionController::_sendCollectionMetadata(bool collectionStarted)
+{
+    qCDebug(DataCollectionControllerLog) << "🟣 _sendCollectionMetadata CALLED:" << (collectionStarted ? "START" : "END");
+    
+    if (!_vehicle) {
+        qCDebug(DataCollectionControllerLog) << "🟣 _sendCollectionMetadata: No active vehicle";
+        return;
+    }
+    
+    SharedLinkInterfacePtr sharedLink = _vehicle->vehicleLinkManager()->primaryLink().lock();
+    if (!sharedLink) {
+        qCDebug(DataCollectionControllerLog) << "🟣 _sendCollectionMetadata: No primary link";
+        return;
+    }
+    
+    CustomPlugin* plugin = qobject_cast<CustomPlugin*>(QGCCorePlugin::instance());
+    if (!plugin || !plugin->customSettings()) {
+        qCDebug(DataCollectionControllerLog) << "🟣 _sendCollectionMetadata: CustomPlugin not available";
+        return;
+    }
+    
+    // Build JSON payload with metadata
+    QJsonObject jsonObj;
+    jsonObj["state"] = collectionStarted ? Starting : Stopping;
+    jsonObj["timestamp"] = QDateTime::currentSecsSinceEpoch();
+    
+    if (collectionStarted) {
+        // START metadata - Generate flight_id matching QGC telemetry log naming
+        // Format: {vehicle_id}-{timestamp}
+        // Example: 001-2026-02-15-14-23-45-123
+        int vehicleId = _vehicle ? _vehicle->id() : 1;
+        QString timestamp = QDateTime::currentDateTime().toString("yyyy-MM-dd-hh-mm-ss-zzz");
+        QString flightId = QString::asprintf("%03d-%s", vehicleId, timestamp.toLocal8Bit().constData());
+        
+        jsonObj["flight_id"] = flightId;
+        
+    } else {
+        // STOP metadata
+        jsonObj["run_id"] = _dcRunId;
+        jsonObj["error_count"] = _dcErrorCount;
+        jsonObj["final_state"] = _dcState;
+    }
+    
+    QJsonDocument jsonDoc(jsonObj);
+    QByteArray jsonData = jsonDoc.toJson(QJsonDocument::Compact);
+    
+    // Validate payload size (TUNNEL max: 128 bytes)
+    if (jsonData.size() > 128) {
+        qCDebug(DataCollectionControllerLog) << "🟣 Payload too large:" << jsonData.size() 
+                                              << "bytes (max 128). Truncating...";
+        jsonData.truncate(128);
+    }
+    
+    qCDebug(DataCollectionControllerLog) << "🟣 Sending TUNNEL payload (" << jsonData.size() 
+                                          << "bytes):" << QString::fromUtf8(jsonData);
+    
+    // Create TUNNEL message
+    mavlink_message_t msg;
+    mavlink_tunnel_t tunnel;
+    
+    tunnel.target_system = _vehicle->id();
+    tunnel.target_component = DATA_COLLECTION_COMPONENT_ID;
+    tunnel.payload_type = MAV_TUNNEL_PAYLOAD_TYPE_UNKNOWN;  // Custom payload
+    tunnel.payload_length = jsonData.size();
+    memcpy(tunnel.payload, jsonData.constData(), jsonData.size());
+    
+    mavlink_msg_tunnel_encode_chan(
+        MAVLinkProtocol::instance()->getSystemId(),
+        MAVLinkProtocol::getComponentId(),
+        sharedLink->mavlinkChannel(),
+        &msg,
+        &tunnel
+    );
+    
+    _vehicle->sendMessageOnLinkThreadSafe(sharedLink.get(), msg);
+    
+    qCDebug(DataCollectionControllerLog) << "🟣 TUNNEL message sent successfully";
 }
