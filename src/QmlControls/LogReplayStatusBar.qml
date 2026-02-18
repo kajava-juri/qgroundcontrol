@@ -14,10 +14,13 @@ Rectangle {
     property var _logReplayLink: null
 
     function pickLogFile() {
-        if (globals.activeVehicle) {
-            mainWindow.showMessageDialog(qsTr("Log Replay"), qsTr("You must close all connections prior to replaying a log."))
-            return
-        }
+        // NOTE: Allowing replay with active connections to support external data collectors
+        // (e.g., component 25) that need to synchronize with replay for sensor data streaming.
+        // The replay link creates a separate vehicle instance for the log data.
+        // if (globals.activeVehicle) {
+        //     mainWindow.showMessageDialog(qsTr("Log Replay"), qsTr("You must close all connections prior to replaying a log."))
+        //     return
+        // }
 
         filePicker.openForLoad()
     }
@@ -52,8 +55,37 @@ Rectangle {
             right: parent.right
         }
 
+        // Status indicator for replay data availability
+        Rectangle {
+            Layout.preferredWidth: ScreenTools.defaultFontPixelHeight * 0.8
+            Layout.preferredHeight: width
+            radius: width / 2
+            visible: controller.link && controller.replayDataStatus !== LogReplayLinkController.NotRequired
+            color: {
+                switch (controller.replayDataStatus) {
+                    case LogReplayLinkController.Checking:
+                        return qgcPal.colorYellow
+                    case LogReplayLinkController.Ready:
+                        return qgcPal.colorGreen
+                    case LogReplayLinkController.Unavailable:
+                        return qgcPal.colorRed
+                    default:
+                        return qgcPal.text
+                }
+            }
+        }
+
+        QGCLabel {
+            text: controller.statusMessage
+            visible: controller.link && controller.statusMessage !== ""
+            Layout.maximumWidth: ScreenTools.defaultFontPixelWidth * 30
+            elide: Text.ElideRight
+        }
+
         QGCButton {
-            enabled: controller.link
+            enabled: controller.link && 
+                     (controller.replayDataStatus === LogReplayLinkController.Ready || 
+                      controller.replayDataStatus === LogReplayLinkController.NotRequired)
             text: controller.isPlaying ? qsTr("Pause") : qsTr("Play")
             onClicked: controller.isPlaying = !controller.isPlaying
         }

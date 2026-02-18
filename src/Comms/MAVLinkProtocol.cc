@@ -17,6 +17,7 @@
 #include "MavlinkSettings.h"
 #include "AppSettings.h"
 #include "QmlObjectListModel.h"
+#include "Vehicle.h"
 
 #include <QtCore/QApplicationStatic>
 #include <QtCore/QDir>
@@ -314,9 +315,36 @@ void MAVLinkProtocol::_startLogging()
         return;
     }
 
+    // Generate flight ID for this recording session
+    Vehicle* vehicle = MultiVehicleManager::instance()->activeVehicle();
+    int vehicleId = vehicle ? vehicle->id() : 999;
+    QDateTime now = QDateTime::currentDateTime();
+    _currentFlightId = QString::asprintf("%03d-%s", 
+                                        vehicleId,
+                                        qPrintable(now.toString("yyyy-MM-dd-hh-mm-ss-zzz")));
+    
+    qCDebug(MAVLinkProtocolLog) << "Starting telemetry logging with flight ID:" << _currentFlightId;
     qCDebug(MAVLinkProtocolLog) << "Temp log" << _tempLogFile->fileName();
     (void) _checkTelemetrySavePath();
 
+    // Send LOG_RECORD_START notification to all systems
+    mavlink_message_t msg;
+    mavlink_statustext_t statustext{};
+    QString notificationText = QString("LOG_RECORD_START:%1").arg(_currentFlightId);
+    QByteArray notificationBytes = notificationText.toUtf8();
+    qstrncpy(statustext.text, notificationBytes.constData(), sizeof(statustext.text));
+    statustext.severity = MAV_SEVERITY_INFO;
+    
+    mavlink_msg_statustext_encode_chan(
+        getSystemId(),
+        getComponentId(),
+        MAVLINK_COMM_0,
+        &msg,
+        &statustext
+    );
+    
+    emit messageReceived(nullptr, msg);
+    
     _logSuspendError = false;
 }
 
@@ -329,12 +357,33 @@ void MAVLinkProtocol::_stopLogging()
                 mavlinkSettings->telemetrySave()->rawValue().toBool() &&
                 !appSettings->disableAllPersistence()->rawValue().toBool()) {
             _saveTelemetryLog(_tempLogFile->fileName());
+            
+            // Send LOG_RECORD_END notification after saving
+            if (!_currentFlightId.isEmpty()) {
+                mavlink_message_t msg;
+                mavlink_statustext_t statustext{};
+                QString notificationText = QString("LOG_RECORD_END:%1").arg(_currentFlightId);
+                QByteArray notificationBytes = notificationText.toUtf8();
+                qstrncpy(statustext.text, notificationBytes.constData(), sizeof(statustext.text));
+                statustext.severity = MAV_SEVERITY_INFO;
+                
+                mavlink_msg_statustext_encode_chan(
+                    getSystemId(),
+                    getComponentId(),
+                    MAVLINK_COMM_0,
+                    &msg,
+                    &statustext
+                );
+                
+                emit messageReceived(nullptr, msg);
+            }
         } else {
             (void) QFile::remove(_tempLogFile->fileName());
         }
     }
 
     _vehicleWasArmed = false;
+    _currentFlightId.clear();
 }
 
 void MAVLinkProtocol::checkForLostLogFiles()
@@ -376,13 +425,21 @@ void MAVLinkProtocol::_saveTelemetryLog(const QString &tempLogfile)
         const QString saveDirPath = SettingsManager::instance()->appSettings()->telemetrySavePath();
         const QDir saveDir(saveDirPath);
 
-        const QString nameFormat("%1%2.%3");
-        const QString dtFormat("yyyy-MM-dd hh-mm-ss");
-
-        int tryIndex = 1;
-        QString saveFileName = nameFormat.arg(QDateTime::currentDateTime().toString(dtFormat), QString(), AppSettings::telemetryFileExtension);
-        while (saveDir.exists(saveFileName)) {
-            saveFileName = nameFormat.arg(QDateTime::currentDateTime().toString(dtFormat), QStringLiteral(".%1").arg(tryIndex++), AppSettings::telemetryFileExtension);
+        QString saveFileName;
+        
+        // Use flight ID if available, otherwise fall back to timestamp
+        if (!_currentFlightId.isEmpty()) {
+            saveFileName = QString("%1.%2").arg(_currentFlightId, AppSettings::telemetryFileExtension);
+            qCDebug(MAVLinkProtocolLog) << "Saving telemetry log with flight ID:" << saveFileName;
+        } else {
+            const QString nameFormat("%1%2.%3");
+            const QString dtFormat("yyyy-MM-dd hh-mm-ss");
+            int tryIndex = 1;
+            saveFileName = nameFormat.arg(QDateTime::currentDateTime().toString(dtFormat), QString(), AppSettings::telemetryFileExtension);
+            while (saveDir.exists(saveFileName)) {
+                saveFileName = nameFormat.arg(QDateTime::currentDateTime().toString(dtFormat), QStringLiteral(".%1").arg(tryIndex++), AppSettings::telemetryFileExtension);
+            }
+            qCDebug(MAVLinkProtocolLog) << "Saving telemetry log with timestamp (no flight ID):" << saveFileName;
         }
 
         const QString saveFilePath = saveDir.absoluteFilePath(saveFileName);

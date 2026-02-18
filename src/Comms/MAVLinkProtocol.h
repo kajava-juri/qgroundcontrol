@@ -57,6 +57,11 @@ public:
     /// Suspend/Restart logging during replay.
     void suspendLogForReplay(bool suspend) { _logSuspendReplay = suspend; }
 
+    /// Get the current flight ID used for telemetry log naming.
+    /// Returns empty string if logging is not active.
+    ///     @return Current flight ID in format XXX-YYYY-MM-DD-hh-mm-ss-zzz
+    QString currentFlightId() const { return _currentFlightId; }
+
     /// Checks the temp directory for log files which may have been left there.
     /// This could happen if QGC crashes without the temp log file being saved.
     /// Give the user an option to save these orphaned files.
@@ -107,6 +112,7 @@ private:
     bool _logSuspendError = false;  ///< true: Logging suspended due to error
     bool _logSuspendReplay = false; ///< true: Logging suspended due to replay
     bool _vehicleWasArmed = false;  ///< true: Vehicle was armed during log sequence
+    QString _currentFlightId;       ///< Current flight ID for telemetry log naming
 
     uint8_t _lastIndex[256][256]{};                             ///< Store the last received sequence ID for each system/component pair
     QSet<QPair<uint8_t,uint8_t>> _firstMessageSeen;

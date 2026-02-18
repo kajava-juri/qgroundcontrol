@@ -12,6 +12,7 @@
 #include "MAVLinkProtocol.h"
 #include "MultiVehicleManager.h"
 #include "QGCLoggingCategory.h"
+#include "Vehicle.h"
 
 #include <QtCore/QFileInfo>
 #include <QtCore/QtEndian>
@@ -112,10 +113,9 @@ void LogReplayWorker::connectToLog()
         return;
     }
 
-    if (MultiVehicleManager::instance()->activeVehicle()) {
-        emit errorOccurred(tr("You must close all connections prior to replaying a log."));
-        return;
-    }
+    // Allow replay with active connections to support external data collectors
+    // that need to synchronize with replay (e.g., component 25 streaming sensor data).
+    // The replay creates its own vehicle from the log, coexisting with connected components.
 
     if (!_loadLogFile()) {
         disconnectFromLog();

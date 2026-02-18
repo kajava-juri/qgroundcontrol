@@ -82,7 +82,7 @@ public:
 
     void close();
     bool valid() const { return ((_file.exists()) && (_record != nullptr)); }
-    bool create(MAVLinkLogManager *manager, QStringView path, uint8_t id);
+    bool create(MAVLinkLogManager *manager, QStringView path, uint8_t id, const QString &flightId);
     MAVLinkLogFiles *record() { return _record; }
     QString fileName() const { return _fileName; }
     bool processStreamData(uint16_t _sequence, uint8_t first_message, const QByteArray &in);
@@ -240,6 +240,7 @@ private:
     QString _rating;
     QString _uploadURL;
     QString _videoURL;
+    QString _currentFlightId;  // Current flight ID for active recording session
 
     static constexpr const char *kMAVLinkLogGroup = "MAVLinkLogGroup";
     static constexpr const char *kEmailAddressKey = "Email";

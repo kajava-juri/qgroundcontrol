@@ -11,13 +11,14 @@
 #include "LinkConfiguration.h"
 #include "MAVLinkProtocol.h"
 #include "MultiVehicleManager.h"
-#include "QGCApplication.h"
 #include "QGCLoggingCategory.h"
 #include "Vehicle.h"
 
 #include <QtCore/QFileInfo>
 
 QGC_LOGGING_CATEGORY(LogReplayLinkControllerLog, "Comms.LogReplayLinkController")
+
+LogReplayLinkController* LogReplayLinkController::_activeInstance = nullptr;
 
 LogReplayLinkController::LogReplayLinkController(QObject *parent)
     : QObject(parent)
@@ -27,6 +28,9 @@ LogReplayLinkController::LogReplayLinkController(QObject *parent)
 
 LogReplayLinkController::~LogReplayLinkController()
 {
+    if (_activeInstance == this) {
+        _activeInstance = nullptr;
+    }
     qCDebug(LogReplayLinkControllerLog) << this;
 }
 
@@ -48,12 +52,19 @@ void LogReplayLinkController::setLink(LogReplayLink *link)
         _totalTime.clear();
         emit totalTimeChanged(_totalTime);
 
+        _setReplayDataStatus(NotRequired);
+        _currentFlightId.clear();
+
         _link = nullptr;
+        if (_activeInstance == this) {
+            _activeInstance = nullptr;
+        }
         emit linkChanged(_link);
     }
 
     if (link) {
         _link = link;
+        _activeInstance = this;  // Track this as the active replay controller
 
         (void) connect(_link, &LogReplayLink::connected, this, &LogReplayLinkController::_linkConnected);
         (void) connect(_link, &LogReplayLink::logFileStats, this, &LogReplayLinkController::_logFileStats);
@@ -65,6 +76,22 @@ void LogReplayLinkController::setLink(LogReplayLink *link)
 
         (void) connect(this, &LogReplayLinkController::playbackSpeedChanged, _link, &LogReplayLink::setPlaybackSpeed);
 
+        // Extract flight ID from filename and request data availability check
+        const SharedLinkConfigurationPtr config = _link->linkConfiguration();
+        const LogReplayConfiguration* logConfig = qobject_cast<const LogReplayConfiguration*>(config.get());
+        if (logConfig) {
+            const QString logFilePath = logConfig->logFilename();
+            const QFileInfo fileInfo(logFilePath);
+            _currentFlightId = _extractFlightId(fileInfo.fileName());
+            
+            if (!_currentFlightId.isEmpty()) {
+                _setReplayDataStatus(Checking, QString("Checking replay data availability..."));
+                _requestReplayDataCheck(_currentFlightId);
+            } else {
+                _setReplayDataStatus(NotRequired, QString("Could not extract flight ID from filename"));
+            }
+        }
+
         emit linkChanged(_link);
     }
 }
@@ -72,6 +99,12 @@ void LogReplayLinkController::setLink(LogReplayLink *link)
 void LogReplayLinkController::setIsPlaying(bool isPlaying) const
 {
     if (!_link) {
+        return;
+    }
+
+    // Don't allow playback if replay data is not ready
+    if (isPlaying && _replayDataStatus != Ready && _replayDataStatus != NotRequired) {
+        qCWarning(LogReplayLinkControllerLog) << "Cannot start playback - replay data status:" << _replayDataStatus;
         return;
     }
 
@@ -241,4 +274,39 @@ void LogReplayLinkController::_notifyExternalComponent(bool sessionStarted)
     );
 
     vehicle->sendMessageOnLinkThreadSafe(sharedLink.get(), msg);
+}
+
+QString LogReplayLinkController::_extractFlightId(const QString &filename)
+{
+    // Expected format: XXX-YYYY-MM-DD-HH-MM-SS-mmm.tlog
+    // Flight ID is the datetime portion: YYYY-MM-DD-HH-MM-SS-mmm
+    QRegularExpression re(R"(^\d{3}-(\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-\d{3}))");
+    QRegularExpressionMatch match = re.match(filename);
+    
+    if (match.hasMatch()) {
+        const QString flightId = match.captured(1);
+        qCDebug(LogReplayLinkControllerLog) << "Extracted flight ID:" << flightId << "from" << filename;
+        return flightId;
+    }
+    
+    qCWarning(LogReplayLinkControllerLog) << "Could not extract flight ID from filename:" << filename;
+    return QString();
+}
+
+void LogReplayLinkController::_setReplayDataStatus(ReplayDataStatus status, const QString &message)
+{
+    if (_replayDataStatus != status) {
+        _replayDataStatus = status;
+        emit replayDataStatusChanged(status);
+    }
+    
+    if (!message.isEmpty() && message != _statusMessage) {
+        _statusMessage = message;
+        emit statusMessageChanged(_statusMessage);
+    }
+}
+
+void LogReplayLinkController::setReplayDataStatus(ReplayDataStatus status, const QString &message)
+{
+    _setReplayDataStatus(status, message);
 }

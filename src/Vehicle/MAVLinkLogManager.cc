@@ -118,15 +118,14 @@ void MAVLinkLogProcessor::close()
     }
 }
 
-bool MAVLinkLogProcessor::create(MAVLinkLogManager *manager, QStringView path, uint8_t id)
+bool MAVLinkLogProcessor::create(MAVLinkLogManager *manager, QStringView path, uint8_t id, const QString &flightId)
 {
-    _fileName = _fileName.asprintf(
-        "%s/%03d-%s%s",
-        path.toLatin1().constData(),
-        id,
-        QDateTime::currentDateTime().toString("yyyy-MM-dd-hh-mm-ss-zzz").toLocal8Bit().constData(),
-        manager->logExtension().toLocal8Bit().constData()
-    );
+    // Use the provided flight ID (format: XXX-YYYY-MM-DD-HH-MM-SS-mmm) for filename
+    // This ensures the filename matches what's sent to the data collector
+    _fileName = QString("%1/%2%3")
+        .arg(path.toString())
+        .arg(flightId)
+        .arg(manager->logExtension());
 
     _file.setFileName(_fileName);
     if (!_file.open(QIODevice::WriteOnly)) {
@@ -602,11 +601,19 @@ void MAVLinkLogManager::startLogging()
         return;
     }
 
+    // Generate flight ID FIRST (format: XXX-YYYY-MM-DD-HH-MM-SS-mmm)
+    // This matches the format sent to data collector in DataCollectionController
+    const int vehicleId = _vehicle->id();
+    const QString timestamp = QDateTime::currentDateTime().toString("yyyy-MM-dd-hh-mm-ss-zzz");
+    _currentFlightId = QString::asprintf("%03d-%s", vehicleId, timestamp.toLocal8Bit().constData());
+    
+    qCDebug(MAVLinkLogManagerLog) << "Starting logging with flight ID:" << _currentFlightId;
+
     if (!_createNewLog()) {
         return;
     }
 
-    // Notify external component about recording start
+    // Notify external component about recording start with the flight ID
     if (_logProcessor) {
         const QFileInfo fileInfo(_logProcessor->fileName());
         _notifyExternalComponent(true, fileInfo.fileName());
@@ -882,7 +889,7 @@ bool MAVLinkLogManager::_createNewLog()
     delete _logProcessor;
     _logProcessor = new MAVLinkLogProcessor();
 
-    if (_logProcessor->create(this, _logPath, static_cast<uint8_t>(_vehicle->id()))) {
+    if (_logProcessor->create(this, _logPath, static_cast<uint8_t>(_vehicle->id()), _currentFlightId)) {
         _insertNewLog(_logProcessor->record());
         emit logFilesChanged();
     } else {

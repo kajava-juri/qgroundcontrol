@@ -5,6 +5,7 @@
 #include <QtQml/qqml.h>
 #include <QtNetwork/QNetworkAccessManager>
 #include "Vehicle.h"
+#include "../../src/Comms/LogReplayLinkController.h"
 
 #define DATA_COLLECTION_COMPONENT_ID 25
 
@@ -136,6 +137,8 @@ private:
     void _sendReadySignalToDataCollector();
     void _notifyDataCollectionState(bool collectionStarted);  // Send NAMED_VALUE_INT state to component 25
     void _sendCollectionMetadata(bool collectionStarted);     // Send detailed data via TUNNEL
+    void _handleReplayDataCheckRequest(const QString &flightId);  // Handle replay data availability check
+    void _sendReplayDataResponse(bool dataAvailable, const QString &flightId);  // Send response to QGC
     
     QNetworkAccessManager _networkManager;
     QTimer _streamInfoTimer;            // Timer for periodic requests

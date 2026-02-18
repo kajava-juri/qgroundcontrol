@@ -11,6 +11,7 @@
 #include <QtCore/QJsonObject>
 #include <QtCore/QStandardPaths>
 #include <QtCore/QDateTime>
+#include "LogReplayLinkController.h"
 
 QGC_LOGGING_CATEGORY(DataCollectionControllerLog, "Custom.DataCollectionController")
 
@@ -185,6 +186,25 @@ void DataCollectionController::_onActiveVehicleChanged(Vehicle* vehicle)
         // Listen to ALL MAVLink messages for debugging
         connect(_vehicle, &Vehicle::mavlinkMessageReceived, this, [this](const mavlink_message_t& message) {
             if (message.compid != DATA_COLLECTION_COMPONENT_ID) {
+                // Also check for STATUSTEXT messages from QGC (component 190)
+                if (message.msgid == MAVLINK_MSG_ID_STATUSTEXT && message.compid == 190) {
+                    mavlink_statustext_t statusText;
+                    mavlink_msg_statustext_decode(&message, &statusText);
+                    
+                    // Ensure null termination
+                    char text[sizeof(statusText.text) + 1];
+                    memcpy(text, statusText.text, sizeof(statusText.text));
+                    text[sizeof(statusText.text)] = '\0';
+                    
+                    const QString msgText = QString::fromUtf8(text);
+                    
+                    // Check for replay data check request
+                    if (msgText.startsWith("REPLAY_DATA_CHECK:")) {
+                        const QString flightId = msgText.mid(18).trimmed();
+                        qCDebug(DataCollectionControllerLog) << "Received replay data check request for:" << flightId;
+                        _handleReplayDataCheckRequest(flightId);
+                    }
+                }
                 return; // Ignore non-DataCollection messages, it seems that drone's high amount of MAVLink traffic can overwhelm and responses from DataCollection python script get lost, I hope this solves the latency tomorrow, otherwise I am screwed :)
             }
             // Log every message type we receive
@@ -671,12 +691,19 @@ void DataCollectionController::_sendCollectionMetadata(bool collectionStarted)
     jsonObj["timestamp"] = QDateTime::currentSecsSinceEpoch();
     
     if (collectionStarted) {
-        // START metadata - Generate flight_id matching QGC telemetry log naming
-        // Format: {vehicle_id}-{timestamp}
-        // Example: 001-2026-02-15-14-23-45-123
-        int vehicleId = _vehicle ? _vehicle->id() : 1;
-        QString timestamp = QDateTime::currentDateTime().toString("yyyy-MM-dd-hh-mm-ss-zzz");
-        QString flightId = QString::asprintf("%03d-%s", vehicleId, timestamp.toLocal8Bit().constData());
+        // START metadata - Use QGC's actual telemetry log flight ID
+        // This ensures the flight_id matches the actual .tlog filename that QGC saves
+        QString flightId = MAVLinkProtocol::instance()->currentFlightId();
+        
+        // Fallback if telemetry logging hasn't started yet (shouldn't normally happen)
+        if (flightId.isEmpty()) {
+            int vehicleId = _vehicle ? _vehicle->id() : 1;
+            QString timestamp = QDateTime::currentDateTime().toString("yyyy-MM-dd-hh-mm-ss-zzz");
+            flightId = QString::asprintf("%03d-%s", vehicleId, timestamp.toLocal8Bit().constData());
+            qCWarning(DataCollectionControllerLog) << "🟠 No flight ID from MAVLinkProtocol, using fallback:" << flightId;
+        } else {
+            qCDebug(DataCollectionControllerLog) << "🟢 Using QGC telemetry flight ID:" << flightId;
+        }
         
         jsonObj["flight_id"] = flightId;
         
@@ -721,4 +748,150 @@ void DataCollectionController::_sendCollectionMetadata(bool collectionStarted)
     _vehicle->sendMessageOnLinkThreadSafe(sharedLink.get(), msg);
     
     qCDebug(DataCollectionControllerLog) << "🟣 TUNNEL message sent successfully";
+}
+
+void DataCollectionController::_handleReplayDataCheckRequest(const QString &flightId)
+{
+    qCDebug(DataCollectionControllerLog) << "Checking replay data availability for flight ID:" << flightId;
+    
+    // TODO: Implement actual file check logic
+    // For now, check if files exist in expected locations:
+    // - ULog: /path/to/ulogs/<flightId>.ulg
+    // - Video: /path/to/videos/<flightId>.mp4
+    
+    // Example implementation:
+    const QString ulogPath = QStringLiteral("/tmp/ulogs/%1.ulg").arg(flightId);
+    const QString videoPath = QStringLiteral("/tmp/videos/%1.mp4").arg(flightId);
+    
+    const bool ulogExists = QFile::exists(ulogPath);
+    const bool videoExists = QFile::exists(videoPath);
+    const bool dataAvailable = ulogExists; // Video optional, ULog required
+    
+    qCDebug(DataCollectionControllerLog) << "Replay data check results:"
+                                          << "ULog:" << (ulogExists ? "FOUND" : "MISSING")
+                                          << "Video:" << (videoExists ? "FOUND" : "MISSING");
+    
+    _sendReplayDataResponse(dataAvailable, flightId);
+}
+
+void DataCollectionController::_sendReplayDataResponse(bool dataAvailable, const QString &flightId)
+{
+    if (!_vehicle) {
+        qCWarning(DataCollectionControllerLog) << "No vehicle for replay data response";
+        return;
+    }
+    
+    SharedLinkInterfacePtr sharedLink = _vehicle->vehicleLinkManager()->primaryLink().lock();
+    if (!sharedLink) {
+        qCWarning(DataCollectionControllerLog) << "No primary link for replay data response";
+        return;
+    }
+    
+    // Send response: "REPLAY_DATA_OK:<flightId>" or "REPLAY_DATA_UNAVAILABLE:<flightId>"
+    const QString responseMsg = dataAvailable
+        ? QStringLiteral("REPLAY_DATA_OK:%1").arg(flightId)
+        : QStringLiteral("REPLAY_DATA_UNAVAILABLE:%1").arg(flightId);
+    
+    qCDebug(DataCollectionControllerLog) << "Sending replay data response:" << responseMsg;
+    
+    mavlink_statustext_t statusText;
+    statusText.severity = dataAvailable ? MAV_SEVERITY_INFO : MAV_SEVERITY_WARNING;
+    statusText.id = 0;
+    statusText.chunk_seq = 0;
+    strncpy(statusText.text, qPrintable(responseMsg), sizeof(statusText.text) - 1);
+    statusText.text[sizeof(statusText.text) - 1] = '\0';
+    
+    mavlink_message_t msg;
+    mavlink_msg_statustext_encode_chan(
+        MAVLinkProtocol::instance()->getSystemId(),
+        DATA_COLLECTION_COMPONENT_ID,  // Send FROM component 25
+        sharedLink->mavlinkChannel(),
+        &msg,
+        &statusText
+    );
+    
+    _vehicle->sendMessageOnLinkThreadSafe(sharedLink.get(), msg);
+}
+
+
+void LogReplayLinkController::_requestReplayDataCheck(const QString &flightId)
+{
+    Vehicle* vehicle = MultiVehicleManager::instance()->activeVehicle();
+    if (!vehicle) {
+        qCDebug(LogReplayLinkControllerLog) << "No active vehicle for data check request";
+        _setReplayDataStatus(NotRequired, QString("No vehicle connection"));
+        return;
+    }
+
+    SharedLinkInterfacePtr sharedLink = vehicle->vehicleLinkManager()->primaryLink().lock();
+    if (!sharedLink) {
+        qCWarning(LogReplayLinkControllerLog) << "No primary link for data check request";
+        _setReplayDataStatus(NotRequired, QString("No communication link"));
+        return;
+    }
+
+    qCDebug(LogReplayLinkControllerLog) << "Requesting replay data check for flight ID:" << flightId;
+
+    // Send request to component 25: "REPLAY_DATA_CHECK:<flightId>"
+    const QString requestMsg = QStringLiteral("REPLAY_DATA_CHECK:") + flightId;
+
+    mavlink_statustext_t statusText;
+    statusText.severity = MAV_SEVERITY_INFO;
+    statusText.id = 0;
+    statusText.chunk_seq = 0;
+    strncpy(statusText.text, qPrintable(requestMsg), sizeof(statusText.text) - 1);
+    statusText.text[sizeof(statusText.text) - 1] = '\0';
+
+    mavlink_message_t msg;
+    mavlink_msg_statustext_encode_chan(
+        MAVLinkProtocol::instance()->getSystemId(),
+        MAVLinkProtocol::getComponentId(),
+        sharedLink->mavlinkChannel(),
+        &msg,
+        &statusText
+    );
+
+    vehicle->sendMessageOnLinkThreadSafe(sharedLink.get(), msg);
+}
+
+void LogReplayLinkController::_handleStatusTextMessage(const mavlink_message_t &message)
+{
+    mavlink_statustext_t statusText;
+    mavlink_msg_statustext_decode(&message, &statusText);
+    
+    // Ensure null termination
+    char text[sizeof(statusText.text) + 1];
+    memcpy(text, statusText.text, sizeof(statusText.text));
+    text[sizeof(statusText.text)] = '\0';
+    
+    const QString msgText = QString::fromUtf8(text);
+    
+    // Only process messages from component 25
+    if (message.compid != 25) {
+        return;
+    }
+    
+    // Get the active LogReplayLinkController instance
+    LogReplayLinkController* replayController = LogReplayLinkController::activeInstance();
+    if (!replayController) {
+        qCDebug(DataCollectionControllerLog) << "No active replay controller - ignoring component 25 message";
+        return;
+    }
+    
+    const QString currentFlightId = replayController->currentFlightId();
+    
+    // Check for replay data availability responses
+    if (msgText.startsWith("REPLAY_DATA_OK:")) {
+        const QString flightId = msgText.mid(15).trimmed();
+        if (flightId == currentFlightId) {
+            qCDebug(DataCollectionControllerLog) << "Replay data available for flight:" << flightId;
+            replayController->setReplayDataStatus(LogReplayLinkController::Ready, QString("Replay data ready"));
+        }
+    } else if (msgText.startsWith("REPLAY_DATA_UNAVAILABLE:")) {
+        const QString flightId = msgText.mid(24).trimmed();
+        if (flightId == currentFlightId) {
+            qCWarning(DataCollectionControllerLog) << "Replay data unavailable for flight:" << flightId;
+            replayController->setReplayDataStatus(LogReplayLinkController::Unavailable, QString("No matching sensor data found"));
+        }
+    }
 }
