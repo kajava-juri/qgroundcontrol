@@ -88,6 +88,12 @@ public slots:
 
     /// Deletes any log files which are in the temp directory
     static void deleteTempLogFiles();
+    
+    /// Start telemetry logging (creates temp log file and flight ID)
+    void startLogging();
+    
+    /// Stop telemetry logging (saves temp log to final location)
+    void stopLogging();
 
 private slots:
     void _vehicleCountChanged();
@@ -95,8 +101,6 @@ private slots:
 private:
     void _logData(LinkInterface *link, const mavlink_message_t &message);
     bool _closeLogFile();
-    void _startLogging();
-    void _stopLogging();
 
     void _forward(const mavlink_message_t &message);
     void _forwardSupport(const mavlink_message_t &message);

@@ -131,7 +131,8 @@ private:
     void _handleNamedValue(const QString& name, const QVariant& value);
     void _updateSourceStatus(const QString& source, const QString& field, const QVariant& value);
     void _handleCollectionEnd();  // Cleanup when collection ends
-
+    void _getStreamInfoHttp();
+    void _handleStreamInfo(const QString& streamName, const QString& uri);
     void _startPeriodicStreamInfoRequest();  // Start periodic requests
     void _stopPeriodicStreamInfoRequest();   // Stop periodic requests
     void _sendReadySignalToDataCollector();

@@ -26,7 +26,8 @@ Item {
     property var mapControl:           _mapControl
     property bool gridModeActive:   false               // Whether grid mode is active
 
-    property var dataController: null 
+    property var dataController: null
+    property bool replayDialogVisible: false 
 
     readonly property string noGPS:         qsTr("NO GPS")
     readonly property real   indicatorValueWidth:   ScreenTools.defaultFontPixelWidth * 7
@@ -258,6 +259,126 @@ Item {
             onDoubleClicked: parent.visible = false
         }
     }
+    }
+
+    // Replay Mode Test Button (top center)
+    QGCButton {
+        id: replayButton
+        anchors.top: parent.top
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.topMargin: ScreenTools.defaultFontPixelHeight
+        text: "Open Replay Mode"
+        onClicked: replayDialogVisible = true
+        z: 100
+    }
+
+    // Replay Mode Dialog
+    Rectangle {
+        id: replayDialog
+        visible: replayDialogVisible
+        anchors.centerIn: parent
+        width: 400
+        height: 250
+        color: qgcPal.window
+        border.color: qgcPal.text
+        border.width: 2
+        radius: 4
+        z: 1000
+
+        Column {
+            anchors.fill: parent
+            anchors.margins: ScreenTools.defaultFontPixelWidth
+            spacing: ScreenTools.defaultFontPixelHeight
+
+            QGCLabel {
+                text: "Enter Replay Mode"
+                font.pointSize: ScreenTools.mediumFontPointSize
+                font.bold: true
+            }
+
+            // RGB Video File
+            Row {
+                spacing: ScreenTools.defaultFontPixelWidth
+                width: parent.width
+
+                QGCLabel {
+                    text: "RGB Video:"
+                    width: 100
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+
+                QGCTextField {
+                    id: rgbFileInput
+                    width: parent.width - 100 - ScreenTools.defaultFontPixelWidth
+                    placeholderText: "/path/to/rgb_video.mp4"
+                }
+            }
+
+            // Thermal Video File
+            Row {
+                spacing: ScreenTools.defaultFontPixelWidth
+                width: parent.width
+
+                QGCLabel {
+                    text: "Thermal Video:"
+                    width: 100
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+
+                QGCTextField {
+                    id: thermalFileInput
+                    width: parent.width - 100 - ScreenTools.defaultFontPixelWidth
+                    placeholderText: "/path/to/thermal_video.mp4"
+                }
+            }
+
+            // Buttons
+            Row {
+                spacing: ScreenTools.defaultFontPixelWidth
+                anchors.horizontalCenter: parent.horizontalCenter
+
+                QGCButton {
+                    text: "Start Replay"
+                    onClicked: {
+                        if (_customVideoManager) {
+                            var success = _customVideoManager.enterReplayMode(
+                                rgbFileInput.text,
+                                thermalFileInput.text
+                            )
+                            if (success) {
+                                replayDialogVisible = false
+                            }
+                        }
+                    }
+                }
+
+                QGCButton {
+                    text: "Cancel"
+                    onClicked: replayDialogVisible = false
+                }
+            }
+        }
+
+        // Click outside to close
+        MouseArea {
+            anchors.fill: parent
+            onClicked: mouse.accepted = true
+            z: -1
+        }
+    }
+
+    // Dark overlay when dialog is open
+    Rectangle {
+        visible: replayDialogVisible
+        anchors.fill: parent
+        color: "black"
+        opacity: 0.5
+        z: 999
+
+        MouseArea {
+            anchors.fill: parent
+            onClicked: replayDialogVisible = false
+        }
     }
 
     QGCToolInsets {

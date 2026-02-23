@@ -48,6 +48,56 @@ void DataCollectionController::toggleRecording() {
     }
 }
 
+void DataCollectionController::_handleStreamInfo(const QString& streamName, const QString& uri) {
+
+    // Get CustomVideoManager from CustomPlugin
+    CustomPlugin* plugin = qobject_cast<CustomPlugin*>(QGCCorePlugin::instance());
+
+    if (!plugin || !plugin->customVideoManager()) {
+        qCWarning(DataCollectionControllerLog) << "CustomPlugin or CustomVideoManager not available";
+        return;
+    }
+    // if data collection is inactive, do not act. Current bug where periodic stream info request's response was received after collection ended and calling setStreamUri causes a stream to restart and GStreamer throws errors.
+    if (!plugin->dataCollectionController()->isCollecting()) {
+        qCWarning(DataCollectionControllerLog) << "Data collection not active - ignoring stream info";
+        return;
+    }
+    
+    CustomVideoManager* videoManager = plugin->customVideoManager();
+    qCDebug(DataCollectionControllerLog) << "CustomVideoManager found, StreamNames size:" << CustomVideoManager::StreamNames.size();
+    
+    if (CustomVideoManager::StreamNames.empty()) {
+        qCWarning(DataCollectionControllerLog) << "StreamNames map is empty - not initialized yet?";
+        return;
+    }
+    
+    // Update the URI for the corresponding stream
+    for (const auto& [index, name] : CustomVideoManager::StreamNames) {
+        qCDebug(DataCollectionControllerLog) << "Checking stream index" << index << "name" << QString::fromStdString(name);
+        if (QString::fromStdString(name) == streamName) {
+            videoManager->setStreamUri(index, uri);  // This will automatically restart if needed
+            qCDebug(DataCollectionControllerLog) << "Updated stream URI for" << streamName << "to" << uri;
+            
+            // Check if all streams now have URIs configured
+            bool allStreamsConfigured = true;
+            for (int i = 0; i < CustomVideoManager::STREAM_COUNT; i++) {
+                if (videoManager->getStreamUri(i).isEmpty()) {
+                    allStreamsConfigured = false;
+                    break;
+                }
+            }
+            
+            if (allStreamsConfigured) {
+                qCDebug(DataCollectionControllerLog) << "All streams configured - stopping periodic stream info requests";
+                _stopPeriodicStreamInfoRequest();
+                _sendReadySignalToDataCollector();
+            }
+            
+            break;
+        }
+    }
+}
+
 void DataCollectionController::_sendHttpRequest(QString endpoint) {
     qCDebug(DataCollectionControllerLog) << "Sending HTTP request to endpoint:" << endpoint;
 
@@ -96,6 +146,84 @@ void DataCollectionController::_sendHttpRequest(QString endpoint) {
     });
 }
 
+void DataCollectionController::_getStreamInfoHttp() {
+    qCDebug(DataCollectionControllerLog) << "Requesting stream info via HTTP";
+
+    CustomPlugin* plugin = qobject_cast<CustomPlugin*>(QGCCorePlugin::instance());
+    if (!plugin && !plugin->customSettings()) {
+        qCDebug(DataCollectionControllerLog) << "CustomPlugin or CustomSettings not available";
+        return;
+    }
+    QString httpUrl = plugin->customSettings()->httpUrl()->rawValue().toString();
+    
+    QNetworkRequest request(QUrl(QString(httpUrl + "/stream_info")));
+    request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+
+    // GET request to api /api/stream_info:
+    /*
+    {
+        "status": "success",
+        "streams": [
+            {
+                "bitrate": 100000,
+                "fps": 15,
+                "height": 480,
+                "qgc_stream_name": "customRgbVideo",
+                "source_name": "imx219",
+                "stream_id": 3,
+                "stream_name": "rgb",
+                "stream_url": "rtsp://10.161.108.237:8554/rgb",
+                "width": 640
+            },
+            {
+                "bitrate": 100000,
+                "fps": 15,
+                "height": 480,
+                "qgc_stream_name": "customThermalVideo",
+                "source_name": "flir1",
+                "stream_id": 4,
+                "stream_name": "thermal",
+                "stream_url": "rtsp://10.161.108.237:8554/thermal",
+                "width": 640
+            }
+        ]
+    }
+  */
+
+    QNetworkReply* reply = _networkManager.get(request);
+
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        if (reply->error() == QNetworkReply::NoError) {
+            QByteArray responseData = reply->readAll();
+            qCDebug(DataCollectionControllerLog) << "Stream info HTTP request succeeded. Response:" << responseData;
+            // Here you would parse the response and update stream URIs as needed
+            QJsonDocument jsonDoc = QJsonDocument::fromJson(responseData);
+            if (jsonDoc.isObject()) {
+                QJsonObject jsonObj = jsonDoc.object();
+                // Example: {"streams": [{"name": "front_camera", "uri": "rtsp://..."}]}
+                if (jsonObj.contains("streams") && jsonObj["streams"].isArray()) {
+                    QJsonArray streamsArray = jsonObj["streams"].toArray();
+                    for (const QJsonValue& streamVal : streamsArray) {
+                        if (streamVal.isObject()) {
+                            QJsonObject streamObj = streamVal.toObject();
+                            QString name = streamObj["qgc_stream_name"].toString();
+                            QString uri = streamObj["stream_url"].toString();
+                            qCDebug(DataCollectionControllerLog) << "Stream:" << name << "URI:" << uri;
+                            // Update internal state with new URIs as needed
+                            _handleStreamInfo(name, uri);
+                        }
+                    }
+                }
+            } else {
+                qCDebug(DataCollectionControllerLog) << "Invalid JSON response for stream info";
+            }
+        } else {
+            qCDebug(DataCollectionControllerLog) << "Stream info HTTP request failed. Error:" << reply->errorString();
+        }
+        reply->deleteLater();
+    });
+}
+
 void DataCollectionController::startRecording() {
     qCDebug(DataCollectionControllerLog) << "Start recording invoked";
     if(!_isCollecting) {
@@ -110,7 +238,7 @@ void DataCollectionController::startRecording() {
         if (_vehicle) {
             _startPeriodicStreamInfoRequest();
         }
-        // Otherwise, _onActiveVehicleChanged will start it when vehicle connects
+        MAVLinkProtocol::instance()->startLogging();
     }
 }
 
@@ -251,52 +379,7 @@ void DataCollectionController::_onActiveVehicleChanged(Vehicle* vehicle)
 
                 qCDebug(DataCollectionControllerLog) << "VIDEO_STREAM_INFORMATION received: Stream Name =" << streamName << "URI =" << uri;
 
-                // Get CustomVideoManager from CustomPlugin
-                CustomPlugin* plugin = qobject_cast<CustomPlugin*>(QGCCorePlugin::instance());
-
-                if (!plugin || !plugin->customVideoManager()) {
-                    qCWarning(DataCollectionControllerLog) << "CustomPlugin or CustomVideoManager not available";
-                    return;
-                }
-                // if data collection is inactive, do not act. Current bug where periodic stream info request's response was received after collection ended and calling setStreamUri causes a stream to restart and GStreamer throws errors.
-                if (!plugin->dataCollectionController()->isCollecting()) {
-                    qCWarning(DataCollectionControllerLog) << "Data collection not active - ignoring stream info";
-                    return;
-                }
-                
-                CustomVideoManager* videoManager = plugin->customVideoManager();
-                qCDebug(DataCollectionControllerLog) << "CustomVideoManager found, StreamNames size:" << CustomVideoManager::StreamNames.size();
-                
-                if (CustomVideoManager::StreamNames.empty()) {
-                    qCWarning(DataCollectionControllerLog) << "StreamNames map is empty - not initialized yet?";
-                    return;
-                }
-                
-                // Update the URI for the corresponding stream
-                for (const auto& [index, name] : CustomVideoManager::StreamNames) {
-                    qCDebug(DataCollectionControllerLog) << "Checking stream index" << index << "name" << QString::fromStdString(name);
-                    if (QString::fromStdString(name) == streamName) {
-                        videoManager->setStreamUri(index, uri);  // This will automatically restart if needed
-                        qCDebug(DataCollectionControllerLog) << "Updated stream URI for" << streamName << "to" << uri;
-                        
-                        // Check if all streams now have URIs configured
-                        bool allStreamsConfigured = true;
-                        for (int i = 0; i < CustomVideoManager::STREAM_COUNT; i++) {
-                            if (videoManager->getStreamUri(i).isEmpty()) {
-                                allStreamsConfigured = false;
-                                break;
-                            }
-                        }
-                        
-                        if (allStreamsConfigured) {
-                            qCDebug(DataCollectionControllerLog) << "All streams configured - stopping periodic stream info requests";
-                            _stopPeriodicStreamInfoRequest();
-                            _sendReadySignalToDataCollector();
-                        }
-                        
-                        break;
-                    }
-                }
+                _handleStreamInfo(streamName, uri);
             }
         });
         
@@ -476,6 +559,11 @@ void DataCollectionController::_handleCollectionEnd()
     
     qCDebug(DataCollectionControllerLog) << "_handleCollectionEnd: Performing cleanup";
     
+    // Force stop telemetry logging to save the .tlog file immediately
+    // (normally only saved when QGC exits, but we want it saved per collection)
+    qCDebug(DataCollectionControllerLog) << "Forcing telemetry log save";
+    MAVLinkProtocol::instance()->stopLogging();
+    
     // Send END notification BEFORE cleanup (Python might still be listening)
     _sendCollectionMetadata(false);
     // This must be sent last, it will trigger cleanup on external component side
@@ -593,15 +681,15 @@ void DataCollectionController::_requestStreamInfo()
     
     // Alternate between modern REQUEST_MESSAGE and legacy command
     // (following VehicleCameraControl pattern)
-    if (_streamInfoRetries % 2 == 0) {
-        qCDebug(DataCollectionControllerLog) << "  Sending REQUEST_MESSAGE:MAVLINK_MSG_ID_VIDEO_STREAM_INFORMATION";
-        _vehicle->sendMavCommand(
-            DATA_COLLECTION_COMPONENT_ID,                             // target component
-            MAV_CMD_REQUEST_MESSAGE,                        // command id
-            false,                                          // showError
-            MAVLINK_MSG_ID_VIDEO_STREAM_INFORMATION,        // msgid (269)
-            0);                                             // stream ID (0 = all streams)
-    } 
+    // if (_streamInfoRetries % 2 == 0) {
+    //     qCDebug(DataCollectionControllerLog) << "  Sending REQUEST_MESSAGE:MAVLINK_MSG_ID_VIDEO_STREAM_INFORMATION";
+    //     _vehicle->sendMavCommand(
+    //         DATA_COLLECTION_COMPONENT_ID,                             // target component
+    //         MAV_CMD_REQUEST_MESSAGE,                        // command id
+    //         false,                                          // showError
+    //         MAVLINK_MSG_ID_VIDEO_STREAM_INFORMATION,        // msgid (269)
+    //         0);                                             // stream ID (0 = all streams)
+    // } 
     // else {
     //     qCDebug(DataCollectionControllerLog) << "  Sending MAV_CMD_REQUEST_VIDEO_STREAM_INFORMATION (legacy)";
     //     _vehicle->sendMavCommand(
@@ -610,6 +698,11 @@ void DataCollectionController::_requestStreamInfo()
     //         false,                                          // showError
     //         0);                                             // stream ID (0 = all streams)
     // }
+
+    // alternative, since issues with long latency (many retries) and message comes very late
+
+
+    _getStreamInfoHttp();
     
     _streamInfoRetries++;  // Increment for next poll
 }

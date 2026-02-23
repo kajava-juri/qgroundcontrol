@@ -89,7 +89,7 @@ void MAVLinkProtocol::logSentBytes(const LinkInterface *link, const QByteArray &
     if (_tempLogFile->write(logData) != logData.length()) {
         const QString message = QStringLiteral("MAVLink Logging failed. Could not write to file %1, logging disabled.").arg(_tempLogFile->fileName());
         qgcApp()->showAppMessage(message, getName());
-        _stopLogging();
+        stopLogging();
         _logSuspendError = true;
     }
 }
@@ -211,7 +211,7 @@ void MAVLinkProtocol::_logData(LinkInterface *link, const mavlink_message_t &mes
         if (_tempLogFile->write(log_data) != len) {
             const QString message = QStringLiteral("MAVLink Logging failed. Could not write to file %1, logging disabled.").arg(_tempLogFile->fileName());
             qgcApp()->showAppMessage(message, getName());
-            _stopLogging();
+            stopLogging();
             _logSuspendError = true;
         }
 
@@ -224,14 +224,14 @@ void MAVLinkProtocol::_logData(LinkInterface *link, const mavlink_message_t &mes
 
     switch (message.msgid) {
     case MAVLINK_MSG_ID_HEARTBEAT: {
-        _startLogging();
+        startLogging();
         mavlink_heartbeat_t heartbeat{};
         mavlink_msg_heartbeat_decode(&message, &heartbeat);
         emit vehicleHeartbeatInfo(link, message.sysid, message.compid, heartbeat.autopilot, heartbeat.type);
         break;
     }
     case MAVLINK_MSG_ID_HIGH_LATENCY: {
-        _startLogging();
+        startLogging();
         mavlink_high_latency_t highLatency{};
         mavlink_msg_high_latency_decode(&message, &highLatency);
         // HIGH_LATENCY does not provide autopilot or type information, generic is our safest bet
@@ -239,7 +239,7 @@ void MAVLinkProtocol::_logData(LinkInterface *link, const mavlink_message_t &mes
         break;
     }
     case MAVLINK_MSG_ID_HIGH_LATENCY2: {
-        _startLogging();
+        startLogging();
         mavlink_high_latency2_t highLatency2{};
         mavlink_msg_high_latency2_decode(&message, &highLatency2);
         emit vehicleHeartbeatInfo(link, message.sysid, message.compid, highLatency2.autopilot, highLatency2.type);
@@ -282,7 +282,7 @@ bool MAVLinkProtocol::_closeLogFile()
     return true;
 }
 
-void MAVLinkProtocol::_startLogging()
+void MAVLinkProtocol::startLogging()
 {
     if (qgcApp()->runningUnitTests()) {
         return;
@@ -348,7 +348,7 @@ void MAVLinkProtocol::_startLogging()
     _logSuspendError = false;
 }
 
-void MAVLinkProtocol::_stopLogging()
+void MAVLinkProtocol::stopLogging()
 {
     if (_tempLogFile->isOpen() && _closeLogFile()) {
         auto appSettings = SettingsManager::instance()->appSettings();
@@ -526,7 +526,7 @@ bool MAVLinkProtocol::_checkTelemetrySavePath()
 void MAVLinkProtocol::_vehicleCountChanged()
 {
     if (MultiVehicleManager::instance()->vehicles()->count() == 0) {
-        _stopLogging();
+        stopLogging();
     }
 }
 

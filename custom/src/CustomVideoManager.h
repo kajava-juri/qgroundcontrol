@@ -12,8 +12,14 @@
 #include <QQuickItem>
 #include <QLoggingCategory>
 
+#include <glib.h>
+
 #include "VideoReceiver.h"
 #include "QGCCorePlugin.h"
+
+typedef struct _GstElement GstElement;
+typedef struct _GstBus GstBus;
+typedef struct _GstMessage GstMessage;
 
 Q_DECLARE_LOGGING_CATEGORY(CustomVideoManagerLog)
 
@@ -70,6 +76,7 @@ signals:
     void streamStateChanged(int streamIndex, bool active);
     void streamDecodingChanged(int streamIndex, bool decoding);
     void streamUriChanged(int streamIndex, const QString& uri);
+    void replayModeChanged(bool active);
 
 private:
 
@@ -80,6 +87,14 @@ private:
     void _restartVideo(int streamIndex);
     void _setActiveVehicle(Vehicle* vehicle);
     void _communicationLostChanged(bool communicationLost);
+    bool _openReplayStream(int streamIndex, const QString& videoPath, QQuickItem* widget);
+    static gboolean _onBusMessage(GstBus* bus, GstMessage* message, gpointer user_data);
+
+public:
+    Q_INVOKABLE bool enterReplayMode(const QString& rgbVideoPath, const QString& thermalVideoPath);
+    Q_INVOKABLE void exitReplayMode();
+
+private:
 
     bool _updateVideoUri(VideoReceiver *receiver, const QString &uri);
     struct StreamInfo {
@@ -94,6 +109,24 @@ private:
         int restartAttempts = 0;  // For exponential backoff in noisy WiFi
         QMetaObject::Connection restartConnection;  // Connection for deferred restart
     };
+
+    // Replay per-stream state
+    struct ReplayStreamInfo {
+        GstElement* pipeline = nullptr;   // playbin instance
+        void* sink = nullptr;             // GstGLQt6 sink (same widget as live)
+        bool loaded = false;
+        QString videoPath;
+    };
+
+    struct ReplayState {
+        std::array<ReplayStreamInfo, STREAM_COUNT> streams;
+        bool active = false;
+        double logStartUnixMs = 0;    // from your sqlite3 session record
+        double playbackSpeed = 1.0;
+    };
+
+    ReplayState _replay;
+
 
     // StreamInfo _streams[STREAM_COUNT];
     std::array<StreamInfo, STREAM_COUNT> _streams{{

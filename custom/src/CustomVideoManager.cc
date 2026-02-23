@@ -15,7 +15,9 @@
 #include "MultiVehicleManager.h"
 #include "CustomPlugin.h"
 #include "DataCollectionController.h"
-
+#include "GstVideoReceiver.h"
+#include "GStreamerHelpers.h"
+#include <gst/gst.h>
 #include <QDebug>
 
 QGC_LOGGING_CATEGORY(CustomVideoManagerLog, "CustomVideoManager")
@@ -543,7 +545,9 @@ void CustomVideoManager::setStreamUri(int streamIndex, const QString& uri)
                 // onStopComplete handler will automatically restart after stop completes
                 stopStream(streamIndex);
             } else {
-                // Not started, just start directly
+
+                // Not started, but if state is not yet active (from external data collector), then dont start
+
                 startStream(streamIndex);
             }
         }
@@ -741,4 +745,249 @@ void CustomVideoManager::_communicationLostChanged(bool communicationLost)
         
         clearAllStreamInfo();
     }
+}
+
+bool CustomVideoManager::enterReplayMode(const QString& rgbVideoPath, const QString& thermalVideoPath)
+{
+    if (_replay.active) {
+        qCWarning(CustomVideoManagerLog) << "Already in replay mode, exiting first";
+        exitReplayMode();
+    }
+
+    qCWarning(CustomVideoManagerLog) << "Entering replay mode";
+
+    // Stop all live streams - disable auto-restart so they don't fight us
+    for (int i = 0; i < STREAM_COUNT; i++) {
+        _streams[i].allowAutoRestart = false;
+        if (_streams[i].receiver && _streams[i].receiver->started()) {
+            _streams[i].receiver->stop();
+        }
+    }
+
+    // _replay.logStartUnixMs = logStartUnixMs;
+    _replay.playbackSpeed  = 1.0;
+
+    QStringList paths = { rgbVideoPath, thermalVideoPath };
+
+    for (int i = 0; i < STREAM_COUNT; i++) {
+        qCDebug(CustomVideoManagerLog) << "Setting up widget replay stream" << StreamNames[i] << "with video path:" << paths[i];
+        QQuickItem* widget = _mainWindow->findChild<QQuickItem*>(
+            QString::fromStdString(StreamNames[i])
+        );
+        if (!widget) {
+            qCCritical(CustomVideoManagerLog) << "Widget not found for stream" << i;
+            exitReplayMode();
+            return false;
+        }
+
+        if (!_openReplayStream(i, paths[i], widget)) {
+            qCCritical(CustomVideoManagerLog) << "Failed to open replay stream" << i;
+            exitReplayMode();
+            return false;
+        }
+    }
+
+    _replay.active = true;
+    // emit replayModeChanged(true);
+
+    // Start paused at position 0 - waiting for first seek from LogReplayLinkController
+    for (int i = 0; i < STREAM_COUNT; i++) {
+        if (_replay.streams[i].pipeline) {
+            qCDebug(CustomVideoManagerLog) << "Setting replay stream" << i << "to PLAY at start";
+            gst_element_set_state(_replay.streams[i].pipeline, GST_STATE_PLAYING);
+        }
+    }
+
+    for (int i = 0; i < STREAM_COUNT; i++) {
+        if (_replay.streams[i].loaded && _streams[i].receiver) {
+            // Manually update state and emit signals
+            _streams[i].active = true;
+            _streams[i].decoding = true;
+            emit streamStateChanged(i, true);
+            emit streamDecodingChanged(i, true);
+        }
+    }
+
+    return true;
+}
+
+bool CustomVideoManager::_openReplayStream(int streamIndex,
+                                            const QString& videoPath,
+                                            QQuickItem* widget)
+{
+    ReplayStreamInfo& rs = _replay.streams[streamIndex];
+
+    // Create a new sink for this widget (on render thread ideally, but
+    // createVideoSink should handle this - same pattern as reinitializeWidgets)
+    // We create a temporary VideoReceiver just to obtain a compatible sink
+    VideoReceiver* tempReceiver = QGCCorePlugin::instance()->createVideoReceiver(this);
+    if (!tempReceiver) {
+        qCCritical(CustomVideoManagerLog) << "Failed to create temp receiver for replay stream" << streamIndex;
+        return false;
+    }
+    tempReceiver->setWidget(widget);
+
+    void* sink = QGCCorePlugin::instance()->createVideoSink(widget, tempReceiver);
+    if (!sink) {
+        qCCritical(CustomVideoManagerLog) << "Failed to create sink for replay stream" << streamIndex;
+        delete tempReceiver;
+        return false;
+    }
+
+    rs.sink = sink;
+
+    // Build playbin pipeline
+    GstElement* pipeline = gst_element_factory_make("playbin", nullptr);
+    if (!pipeline) {
+        qCCritical(CustomVideoManagerLog) << "Failed to create playbin for stream" << streamIndex;
+        QGCCorePlugin::instance()->releaseVideoSink(sink);
+        rs.sink = nullptr;
+        delete tempReceiver;
+        return false;
+    }
+
+    // file:// URI - must be absolute path
+    QString uri = "file://" + videoPath;
+    g_object_set(pipeline, "uri", uri.toUtf8().constData(), nullptr);
+
+    // Point playbin at our existing GL sink
+    // sink here is a GstElement* wrapped in void* by QGC's plugin API
+    g_object_set(pipeline, "video-sink", static_cast<GstElement*>(sink), nullptr);
+
+    // Suppress audio (no audio in drone video files)
+    GstElement* fakesink = gst_element_factory_make("fakesink", nullptr);
+    if (fakesink) {
+        g_object_set(pipeline, "audio-sink", fakesink, nullptr);
+    }
+
+    // Watch bus for errors and EOS
+    GstBus* bus = gst_element_get_bus(pipeline);
+    if (bus) {
+        gst_bus_enable_sync_message_emission(bus);
+        (void) g_signal_connect(bus, "sync-message", G_CALLBACK(_onBusMessage),
+                                reinterpret_cast<gpointer>(static_cast<intptr_t>(streamIndex)));
+        gst_object_unref(bus);
+    }
+
+    rs.pipeline = pipeline;
+    rs.videoPath = videoPath;
+    rs.loaded = true;
+
+    qCWarning(CustomVideoManagerLog) << "Replay stream" << streamIndex
+                                      << "opened:" << videoPath;
+    return true;
+}
+
+gboolean CustomVideoManager::_onBusMessage(GstBus* bus, GstMessage* message, gpointer user_data)
+{
+    Q_UNUSED(bus)
+    
+    int streamIndex = static_cast<int>(reinterpret_cast<intptr_t>(user_data));
+    CustomPlugin* plugin = qobject_cast<CustomPlugin*>(QGCCorePlugin::instance());
+    if (!plugin || !plugin->customVideoManager()) {
+        qCCritical(CustomVideoManagerLog) << "Failed to get custom video manager";
+        return TRUE;
+    }
+    CustomVideoManager* manager = plugin->customVideoManager();
+
+    if (!manager || !manager->_replay.streams[streamIndex].pipeline) {
+        qCCritical(CustomVideoManagerLog) << "Failed to get pipeline for replay stream" << streamIndex;   
+    }
+    GstElement* pipeline = manager->_replay.streams[streamIndex].pipeline;
+    
+    switch (GST_MESSAGE_TYPE(message)) {
+    case GST_MESSAGE_ERROR: {
+        GError* err = nullptr;
+        gchar* debug = nullptr;
+        gst_message_parse_error(message, &err, &debug);
+        qCCritical(CustomVideoManagerLog) << "Replay stream" << streamIndex 
+                                           << "error:" << err->message;
+        g_error_free(err);
+        g_free(debug);
+        break;
+    }
+    case GST_MESSAGE_EOS: {
+        qCWarning(CustomVideoManagerLog) << "Replay stream" << streamIndex 
+                                          << "reached end of stream - seeking to start and pausing";
+        int idx = streamIndex;
+        QMetaObject::invokeMethod(manager, [manager, idx]() {
+            GstElement* pipeline = manager->_replay.streams[idx].pipeline;
+            if (!pipeline) return;
+            
+            if (gst_element_seek_simple(pipeline, GST_FORMAT_TIME,
+                                        static_cast<GstSeekFlags>(GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_KEY_UNIT),
+                                        0)) {
+                qCDebug(CustomVideoManagerLog) << "Replay stream" << idx << "seeked to start";
+                gst_element_set_state(pipeline, GST_STATE_PAUSED);
+            } else {
+                qCWarning(CustomVideoManagerLog) << "Replay stream" << idx << "failed to seek";
+            }
+        }, Qt::QueuedConnection);
+
+        break;
+    }
+    case GST_MESSAGE_WARNING: {
+        GError *err = nullptr;
+        gchar  *dbg = nullptr;
+        gst_message_parse_warning(message, &err, &dbg);
+        qCWarning(CustomVideoManagerLog) << "Replay stream" << streamIndex 
+                                         << "warning:" << err->message;
+        g_clear_error(&err);
+        g_free(dbg);
+        break;
+    }
+
+    case GST_MESSAGE_STATE_CHANGED: {
+        // Only log top-level pipeline state changes
+        if (GST_MESSAGE_SRC(message) == GST_OBJECT(pipeline)) {
+            GstState old_state, new_state, pending;
+            gst_message_parse_state_changed(message, &old_state, &new_state, &pending);
+            qCDebug(CustomVideoManagerLog) << "[STATE] " << gst_element_state_get_name(old_state)
+                                            << " -> " << gst_element_state_get_name(new_state);
+        }
+        break;
+    }
+    default:
+        break;
+    }
+    
+    return TRUE;
+}
+
+
+void CustomVideoManager::exitReplayMode()
+{
+    qCWarning(CustomVideoManagerLog) << "Exiting replay mode";
+
+    _replay.active = false;
+
+    for (int i = 0; i < STREAM_COUNT; i++) {
+        ReplayStreamInfo& rs = _replay.streams[i];
+        
+        // Stop and cleanup pipeline
+        if (rs.pipeline) {
+            gst_element_set_state(rs.pipeline, GST_STATE_NULL);
+            gst_object_unref(rs.pipeline);
+            rs.pipeline = nullptr;
+        }
+        
+        // Release sink
+        if (rs.sink) {
+            QGCCorePlugin::instance()->releaseVideoSink(rs.sink);
+            rs.sink = nullptr;
+        }
+        
+        rs.loaded = false;
+        rs.videoPath.clear();
+
+        // Re-enable auto-restart for live streams
+        _streams[i].allowAutoRestart = true;
+
+        _streams[i].active = false;
+        _streams[i].decoding = false;
+        emit streamStateChanged(i, false);
+        emit streamDecodingChanged(i, false);
+    }
+
+    emit replayModeChanged(false);
 }
