@@ -70,7 +70,8 @@ public:
     enum VideoFlags {
         StreamsReady  = 1 << 0,
         StreamsActive = 1 << 1,
-        StreamsError  = 1 << 2
+        StreamsError  = 1 << 2,
+        StreamStopped = 1 << 3
     };
     Q_DECLARE_FLAGS(VideoFlagSet, VideoFlags)
     Q_FLAG(VideoFlagSet)

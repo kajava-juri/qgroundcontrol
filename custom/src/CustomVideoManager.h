@@ -91,8 +91,17 @@ private:
     static gboolean _onBusMessage(GstBus* bus, GstMessage* message, gpointer user_data);
 
 public:
-    Q_INVOKABLE bool enterReplayMode(const QString& rgbVideoPath, const QString& thermalVideoPath);
+    struct VideoStreamMetadata {
+        QString videoPath;
+        qint64 offsetMs = 0;  // Offset from tlog start (can be negative if video starts after tlog)
+    };
+
+    Q_INVOKABLE bool enterReplayMode(const QString& rgbVideoPath, const QString& thermalVideoPath, 
+                                      qint64 rgbOffsetMs = 0, qint64 thermalOffsetMs = 0);
     Q_INVOKABLE void exitReplayMode();
+    Q_INVOKABLE void seekToPosition(quint32 tlogTimeSecs);  // For manual slider seeking
+    Q_INVOKABLE void startReplayPlayback();  // Start playing videos
+    Q_INVOKABLE void pauseReplayPlayback();  // Pause videos  // Seek based on tlog playhead position
 
 private:
 
@@ -116,12 +125,14 @@ private:
         void* sink = nullptr;             // GstGLQt6 sink (same widget as live)
         bool loaded = false;
         QString videoPath;
+        qint64 offsetMs = 0;              // Offset from tlog start (negative if video starts after tlog)
+        bool readyToPlay = false;         // False if waiting for tlog to catch up to video start
+        qint64 lastSeekTimeMs = -1000;    // Last video time we seeked to (ms) - initialized to force first seek
     };
 
     struct ReplayState {
         std::array<ReplayStreamInfo, STREAM_COUNT> streams;
         bool active = false;
-        double logStartUnixMs = 0;    // from your sqlite3 session record
         double playbackSpeed = 1.0;
     };
 

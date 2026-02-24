@@ -747,14 +747,17 @@ void CustomVideoManager::_communicationLostChanged(bool communicationLost)
     }
 }
 
-bool CustomVideoManager::enterReplayMode(const QString& rgbVideoPath, const QString& thermalVideoPath)
+bool CustomVideoManager::enterReplayMode(const QString& rgbVideoPath, const QString& thermalVideoPath, 
+                                          qint64 rgbOffsetMs, qint64 thermalOffsetMs)
 {
     if (_replay.active) {
         qCWarning(CustomVideoManagerLog) << "Already in replay mode, exiting first";
         exitReplayMode();
     }
 
-    qCWarning(CustomVideoManagerLog) << "Entering replay mode";
+    qcDebug(CustomVideoManagerLog) << "Entering replay mode";
+    qcDebug(CustomVideoManagerLog) << "  RGB:" << rgbVideoPath << "offset:" << rgbOffsetMs << "ms";
+    qcDebug(CustomVideoManagerLog) << "  Thermal:" << thermalVideoPath << "offset:" << thermalOffsetMs << "ms";
 
     // Stop all live streams - disable auto-restart so they don't fight us
     for (int i = 0; i < STREAM_COUNT; i++) {
@@ -764,37 +767,65 @@ bool CustomVideoManager::enterReplayMode(const QString& rgbVideoPath, const QStr
         }
     }
 
-    // _replay.logStartUnixMs = logStartUnixMs;
     _replay.playbackSpeed  = 1.0;
 
     QStringList paths = { rgbVideoPath, thermalVideoPath };
+    QList<qint64> offsets = { rgbOffsetMs, thermalOffsetMs };
 
     for (int i = 0; i < STREAM_COUNT; i++) {
+        // Skip if no video path provided
+        if (paths[i].isEmpty()) {
+            qCDebug(CustomVideoManagerLog) << "Skipping stream" << i << "- no video path";
+            continue;
+        }
+        
         qCDebug(CustomVideoManagerLog) << "Setting up widget replay stream" << StreamNames[i] << "with video path:" << paths[i];
         QQuickItem* widget = _mainWindow->findChild<QQuickItem*>(
             QString::fromStdString(StreamNames[i])
         );
         if (!widget) {
-            qCCritical(CustomVideoManagerLog) << "Widget not found for stream" << i;
-            exitReplayMode();
-            return false;
+            qCWarning(CustomVideoManagerLog) << "Widget not found for stream" << i << "- skipping";
+            continue;
         }
 
         if (!_openReplayStream(i, paths[i], widget)) {
-            qCCritical(CustomVideoManagerLog) << "Failed to open replay stream" << i;
-            exitReplayMode();
-            return false;
+            qCWarning(CustomVideoManagerLog) << "Failed to open replay stream" << i << "- skipping";
+            continue;
+        }
+        
+        // Store offset
+        _replay.streams[i].offsetMs = offsets[i];
+        
+        // If offset is negative (video starts after tlog), mark as not ready
+        if (offsets[i] < 0) {
+            _replay.streams[i].readyToPlay = false;
+            qCWarning(CustomVideoManagerLog) << "Stream" << i << "starts" << (-offsets[i]) 
+                                              << "ms after tlog - will delay playback";
+        } else {
+            _replay.streams[i].readyToPlay = true;
         }
     }
 
     _replay.active = true;
-    // emit replayModeChanged(true);
 
-    // Start paused at position 0 - waiting for first seek from LogReplayLinkController
+    // Start all streams PAUSED at initial offset position - wait for user to press play
     for (int i = 0; i < STREAM_COUNT; i++) {
         if (_replay.streams[i].pipeline) {
-            qCDebug(CustomVideoManagerLog) << "Setting replay stream" << i << "to PLAY at start";
-            gst_element_set_state(_replay.streams[i].pipeline, GST_STATE_PLAYING);
+            qCDebug(CustomVideoManagerLog) << "Preparing replay stream" << i;
+            
+            // Seek to offset position (handles negative offsets by staying at 0)
+            qint64 initialPosMs = qMax(static_cast<qint64>(0), offsets[i]);
+            gst_element_set_state(_replay.streams[i].pipeline, GST_STATE_PAUSED);
+            
+            if (initialPosMs > 0) {
+                gst_element_seek_simple(_replay.streams[i].pipeline, GST_FORMAT_TIME,
+                    static_cast<GstSeekFlags>(GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_KEY_UNIT),
+                    initialPosMs * GST_MSECOND);
+                qCDebug(CustomVideoManagerLog) << "Stream" << i << "seeked to initial position" << initialPosMs << "ms";
+            }
+            
+            // Keep PAUSED - will start playing when user presses play button
+            qCDebug(CustomVideoManagerLog) << "Stream" << i << "ready at" << offsets[i] << "ms offset, waiting for playback start";
         }
     }
 
@@ -952,6 +983,105 @@ gboolean CustomVideoManager::_onBusMessage(GstBus* bus, GstMessage* message, gpo
     }
     
     return TRUE;
+}
+
+void CustomVideoManager::seekToPosition(quint32 tlogTimeSecs)
+{
+    if (!_replay.active) {
+        return;
+    }
+    
+    qint64 tlogTimeMs = static_cast<qint64>(tlogTimeSecs) * 1000;
+    
+    for (int i = 0; i < STREAM_COUNT; i++) {
+        ReplayStreamInfo& rs = _replay.streams[i];
+        
+        if (!rs.pipeline || !rs.loaded) {
+            continue;
+        }
+        
+        // Calculate video position with offset
+        // offsetMs > 0: video started before tlog (e.g., 2000ms before)
+        // offsetMs < 0: video started after tlog (e.g., -3000ms = video starts 3s after tlog)
+        qint64 videoTimeMs = tlogTimeMs + rs.offsetMs;
+        
+        // Handle video starting after tlog
+        if (videoTimeMs < 0) {
+            // Tlog hasn't reached video start yet - keep paused at position 0
+            if (rs.readyToPlay) {
+                qCDebug(CustomVideoManagerLog) << "Stream" << i << "not yet started - pausing at 0";
+                gst_element_set_state(rs.pipeline, GST_STATE_PAUSED);
+                gst_element_seek_simple(rs.pipeline, GST_FORMAT_TIME,
+                    static_cast<GstSeekFlags>(GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_KEY_UNIT),
+                    0);
+                rs.readyToPlay = false;
+            }
+            continue;
+        }
+        
+        // Video is ready to play
+        if (!rs.readyToPlay) {
+            qCDebug(CustomVideoManagerLog) << "Stream" << i << "now ready - unpausing";
+            rs.readyToPlay = true;
+        }
+        
+        // Only seek if time changed significantly (avoid sub-second jitter)
+        qint64 seekPos = static_cast<gint64>(videoTimeMs * GST_MSECOND);
+        qint64 lastSeekPos = static_cast<qint64>(rs.lastSeekTimeMs * GST_MSECOND);
+        qint64 seekDelta = qAbs(seekPos - lastSeekPos);
+        
+        // Only seek if we're more than 500ms off (accounts for keyframe seeking inaccuracy)
+        if (seekDelta < 500 * GST_MSECOND) {
+            continue;
+        }
+        
+        rs.lastSeekTimeMs = videoTimeMs;
+        
+        gboolean seekResult = gst_element_seek_simple(
+            rs.pipeline, 
+            GST_FORMAT_TIME,
+            static_cast<GstSeekFlags>(GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_KEY_UNIT),
+            seekPos
+        );
+        
+        if (!seekResult) {
+            qCWarning(CustomVideoManagerLog) << "Seek failed for stream" << i << "position:" << videoTimeMs << "ms";
+        } else {
+            qCDebug(CustomVideoManagerLog) << "Seeked stream" << i << "to" << videoTimeMs << "ms (tlog:" << tlogTimeMs << "ms, offset:" << rs.offsetMs << "ms)";
+        }
+    }
+}
+
+void CustomVideoManager::startReplayPlayback()
+{
+    if (!_replay.active) {
+        return;
+    }
+    
+    qCDebug(CustomVideoManagerLog) << "Starting replay video playback";
+    
+    for (int i = 0; i < STREAM_COUNT; i++) {
+        if (_replay.streams[i].pipeline && _replay.streams[i].loaded) {
+            gst_element_set_state(_replay.streams[i].pipeline, GST_STATE_PLAYING);
+            qCDebug(CustomVideoManagerLog) << "Stream" << i << "now PLAYING";
+        }
+    }
+}
+
+void CustomVideoManager::pauseReplayPlayback()
+{
+    if (!_replay.active) {
+        return;
+    }
+    
+    qCDebug(CustomVideoManagerLog) << "Pausing replay video playback";
+    
+    for (int i = 0; i < STREAM_COUNT; i++) {
+        if (_replay.streams[i].pipeline && _replay.streams[i].loaded) {
+            gst_element_set_state(_replay.streams[i].pipeline, GST_STATE_PAUSED);
+            qCDebug(CustomVideoManagerLog) << "Stream" << i << "now PAUSED";
+        }
+    }
 }
 
 

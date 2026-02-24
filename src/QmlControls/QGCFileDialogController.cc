@@ -114,3 +114,15 @@ QString QGCFileDialogController::urlToLocalFile(QUrl url)
 
     return url.toString();
 }
+
+QString QGCFileDialogController::folderUrlToLocalFile(QUrl url)
+{
+    QString path = url.isLocalFile() ? url.toLocalFile() : url.toString();
+    
+    // Ensure path doesn't have trailing slash
+    while (path.endsWith('/') || path.endsWith('\\')) {
+        path.chop(1);
+    }
+    
+    return path;
+}

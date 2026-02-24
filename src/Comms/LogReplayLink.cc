@@ -223,6 +223,9 @@ void LogReplayWorker::movePlayhead(qreal percentComplete)
     newRelativeTimeUSecs = static_cast<qreal>(_logCurrentTimeUSecs - _logStartTimeUSecs);
     percentComplete = ((newRelativeTimeUSecs / _logDurationUSecs) * 100);
     emit playbackPercentCompleteChanged(percentComplete);
+    
+    // Emit playheadMoved for video seeking (only on manual slider moves)
+    emit playheadMoved((_logCurrentTimeUSecs - _logStartTimeUSecs) / 1000000);
 }
 
 void LogReplayWorker::_resetPlaybackToBeginning()
@@ -429,6 +432,7 @@ LogReplayLink::LogReplayLink(SharedLinkConfigurationPtr &config, QObject *parent
     (void) connect(_worker, &LogReplayWorker::playbackPaused, this, &LogReplayLink::playbackPaused, Qt::QueuedConnection);
     (void) connect(_worker, &LogReplayWorker::playbackPercentCompleteChanged, this, &LogReplayLink::playbackPercentCompleteChanged, Qt::QueuedConnection);
     (void) connect(_worker, &LogReplayWorker::currentLogTimeSecs, this, &LogReplayLink::currentLogTimeSecs, Qt::QueuedConnection);
+    (void) connect(_worker, &LogReplayWorker::playheadMoved, this, &LogReplayLink::playheadMoved, Qt::QueuedConnection);
     (void) connect(_worker, &LogReplayWorker::disconnected, this, &LogReplayLink::disconnected, Qt::QueuedConnection);
 
     _workerThread->start();
@@ -513,4 +517,9 @@ void LogReplayLink::setPlaybackSpeed(qreal playbackSpeed)
 void LogReplayLink::movePlayhead(qreal percentComplete)
 {
     (void) QMetaObject::invokeMethod(_worker, "movePlayhead", Qt::QueuedConnection, percentComplete);
+}
+
+quint64 LogReplayLink::logStartTimeUSecs() const
+{
+    return _worker ? _worker->logStartTimeUSecs() : 0;
 }

@@ -68,6 +68,7 @@ public:
 
     bool isConnected() const { return _isConnected; }
     bool isPlaying() const;
+    quint64 logStartTimeUSecs() const { return _logStartTimeUSecs; }
 
 signals:
     void connected();
@@ -80,6 +81,7 @@ signals:
     void playbackAtEnd();
     void playbackPercentCompleteChanged(qreal percentComplete);
     void currentLogTimeSecs(uint32_t secs);
+    void playheadMoved(uint32_t secs);
 
 public slots:
     void setup();
@@ -142,6 +144,7 @@ public:
     void pause();
     void setPlaybackSpeed(qreal playbackSpeed);
     void movePlayhead(qreal percentComplete);
+    quint64 logStartTimeUSecs() const;
 
 signals:
     void logFileStats(uint32_t logDurationSecs);
@@ -150,6 +153,7 @@ signals:
     void playbackAtEnd();
     void playbackPercentCompleteChanged(qreal percentComplete);
     void currentLogTimeSecs(uint32_t secs);
+    void playheadMoved(uint32_t secs);
 
 private slots:
     void _writeBytes(const QByteArray &bytes) override { Q_UNUSED(bytes); }

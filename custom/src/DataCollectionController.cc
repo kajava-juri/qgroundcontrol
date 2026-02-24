@@ -487,6 +487,7 @@ void DataCollectionController::_handleNamedValue(const QString& name, const QVar
         const bool active = _vidFlags & StreamsActive;
         const bool wasActive = prevFlags & StreamsActive;
         const bool wasReady = prevFlags & StreamsReady;
+        const bool stopped = _vidFlags & StreamStopped;
         
         qCWarning(DataCollectionControllerLog) << "🔵 vid_flags received:"
             << "value=" << _vidFlags
@@ -514,7 +515,7 @@ void DataCollectionController::_handleNamedValue(const QString& name, const QVar
         }
         
         // Detect end of collection: StreamsActive flag goes from 1 to 0
-        if (wasActive && !active && _isCollecting) {
+        if (stopped) {
             qCDebug(DataCollectionControllerLog) << "DATA COLLECTION ENDED (StreamsActive flag cleared) - stopping";
             _handleCollectionEnd();
         }
@@ -906,6 +907,27 @@ void DataCollectionController::_sendReplayDataResponse(bool dataAvailable, const
     _vehicle->sendMessageOnLinkThreadSafe(sharedLink.get(), msg);
 }
 
+QString findSessionMetadata(const QString& folderPath, const QString& flightId) {
+    // Try symlink lookup first (fast path)
+    QDir symlinkDir(folderPath + "/sessions/by_flight_id");
+    if (symlinkDir.exists(flightId)) {
+        QString sessionDir = symlinkDir.filePath(flightId);
+        QFileInfo info(sessionDir);
+        if (info.isSymLink()) {
+            sessionDir = info.symLinkTarget();
+        }
+        return sessionDir + "/session_metadata.json";
+    }
+    
+    // Fallback: scan all session directories (slower)
+    QDir sessionsDir(folderPath + "/sessions");
+    for (const QString& entry : sessionsDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+        QString metadataPath = sessionsDir.filePath(entry + "/session_metadata.json");
+        // Parse JSON and check flight_id...
+    }
+    
+    return QString();
+}
 
 void LogReplayLinkController::_requestReplayDataCheck(const QString &flightId)
 {

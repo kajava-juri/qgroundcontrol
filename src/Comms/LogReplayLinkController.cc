@@ -8,13 +8,25 @@
  ****************************************************************************/
 
 #include "LogReplayLinkController.h"
+#include "AppSettings.h"
+#include "CustomVideoManager.h"
 #include "LinkConfiguration.h"
+#include "LinkManager.h"
 #include "MAVLinkProtocol.h"
 #include "MultiVehicleManager.h"
+#include "QGCApplication.h"
+#include "QGCCorePlugin.h"
 #include "QGCLoggingCategory.h"
+#include "SettingsManager.h"
 #include "Vehicle.h"
+#include "CustomPlugin.h"
 
+#include <QtCore/QDir>
+#include <QtCore/QFile>
 #include <QtCore/QFileInfo>
+#include <QtCore/QJsonDocument>
+#include <QtCore/QJsonObject>
+#include <QtCore/QtEndian>
 
 QGC_LOGGING_CATEGORY(LogReplayLinkControllerLog, "Comms.LogReplayLinkController")
 
@@ -76,20 +88,11 @@ void LogReplayLinkController::setLink(LogReplayLink *link)
 
         (void) connect(this, &LogReplayLinkController::playbackSpeedChanged, _link, &LogReplayLink::setPlaybackSpeed);
 
-        // Extract flight ID from filename and request data availability check
-        const SharedLinkConfigurationPtr config = _link->linkConfiguration();
-        const LogReplayConfiguration* logConfig = qobject_cast<const LogReplayConfiguration*>(config.get());
-        if (logConfig) {
-            const QString logFilePath = logConfig->logFilename();
-            const QFileInfo fileInfo(logFilePath);
-            _currentFlightId = _extractFlightId(fileInfo.fileName());
-            
-            if (!_currentFlightId.isEmpty()) {
-                _setReplayDataStatus(Checking, QString("Checking replay data availability..."));
-                _requestReplayDataCheck(_currentFlightId);
-            } else {
-                _setReplayDataStatus(NotRequired, QString("Could not extract flight ID from filename"));
-            }
+        // If replay was loaded from metadata folder, external data is already verified
+        if (!_replayFlightId.isEmpty()) {
+            _setReplayDataStatus(Ready, QString("Replay data ready"));
+        } else {
+            _setReplayDataStatus(NotRequired, QString("No external data source"));
         }
 
         emit linkChanged(_link);
@@ -309,4 +312,225 @@ void LogReplayLinkController::_setReplayDataStatus(ReplayDataStatus status, cons
 void LogReplayLinkController::setReplayDataStatus(ReplayDataStatus status, const QString &message)
 {
     _setReplayDataStatus(status, message);
+}
+
+bool LogReplayLinkController::loadFromMetadataFolder(const QString &metadataFolderPath)
+{
+    qCDebug(LogReplayLinkControllerLog) << "Loading replay from metadata folder:" << metadataFolderPath;
+    
+    // 1. Check if sessions directory exists
+    QDir sessionsDir(metadataFolderPath + "/sessions/by_flight_id");
+    if (!sessionsDir.exists()) {
+        qCWarning(LogReplayLinkControllerLog) << "No sessions directory found at" << sessionsDir.path();
+        return false;
+    }
+    
+    // 2. Get list of session directories (for now, use first one - later can add UI picker)
+    QStringList sessions = sessionsDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+    if (sessions.isEmpty()) {
+        qCWarning(LogReplayLinkControllerLog) << "No sessions found in" << sessionsDir.path();
+        return false;
+    }
+    
+    // For demo: use first session (TODO: let user pick from list)
+    QString sessionDir = sessions.first();
+    QString metadataPath = sessionsDir.filePath(sessionDir + "/session_metadata.json");
+    
+    qCDebug(LogReplayLinkControllerLog) << "Loading metadata from" << metadataPath;
+    
+    // 3. Parse metadata JSON
+    QFile metadataFile(metadataPath);
+    if (!metadataFile.open(QIODevice::ReadOnly)) {
+        qCWarning(LogReplayLinkControllerLog) << "Failed to open metadata file" << metadataPath;
+        return false;
+    }
+    
+    QJsonDocument doc = QJsonDocument::fromJson(metadataFile.readAll());
+    if (doc.isNull() || !doc.isObject()) {
+        qCWarning(LogReplayLinkControllerLog) << "Invalid JSON in metadata file";
+        return false;
+    }
+    
+    QJsonObject metadata = doc.object();
+    QString flightId = metadata["flight_id"].toString();
+    
+    if (flightId.isEmpty()) {
+        qCWarning(LogReplayLinkControllerLog) << "No flight_id found in metadata";
+        return false;
+    }
+
+    _replayFlightId = flightId;
+    _metadataFolderPath = metadataFolderPath;
+    
+    // 4. Find matching .tlog file
+    QString tlogPath = _findTlogByFlightId(flightId);
+    if (tlogPath.isEmpty()) {
+        qCWarning(LogReplayLinkControllerLog) << "No matching .tlog found for flight_id" << flightId;
+        return false;
+    }
+    
+    qCDebug(LogReplayLinkControllerLog) << "Found matching tlog:" << tlogPath;
+    
+    // 5. Read tlog start timestamp before creating link (file needs to be loaded first)
+    quint64 tlogStartUSecs = 0;
+    {
+        QFile tlogFile(tlogPath);
+        if (tlogFile.open(QIODevice::ReadOnly)) {
+            QByteArray timestampBytes = tlogFile.read(8);
+            if (timestampBytes.size() == 8) {
+                quint64 timestamp = qFromBigEndian(*reinterpret_cast<const quint64*>(timestampBytes.constData()));
+                quint64 currentTimestamp = static_cast<quint64>(QDateTime::currentMSecsSinceEpoch()) * 1000;
+                if (timestamp > currentTimestamp) {
+                    timestamp = qbswap(timestamp);
+                }
+                tlogStartUSecs = timestamp;
+            }
+            tlogFile.close();
+        }
+    }
+    
+    if (tlogStartUSecs == 0) {
+        qCWarning(LogReplayLinkControllerLog) << "Failed to read tlog start timestamp";
+        return false;
+    }
+    
+    qCDebug(LogReplayLinkControllerLog) << "Tlog start timestamp from file:" << tlogStartUSecs << "usecs";
+    
+    // 6. Use LinkManager::startLogReplay() to match upstream pattern
+    LogReplayLink* link = LinkManager::instance()->startLogReplay(tlogPath);
+    if (!link) {
+        qCWarning(LogReplayLinkControllerLog) << "Failed to start log replay";
+        return false;
+    }
+    
+    // 7. Parse video stream information
+    QJsonObject streams = metadata["streams"].toObject();
+    
+    // Stream 1 = RGB
+    if (streams.contains("1")) {
+        QJsonObject stream1 = streams["1"].toObject();
+        QString videoPath = stream1["video_file_path"].toString();
+        double streamStartUnix = stream1["start_timestamp_unix"].toDouble();
+        
+        // Convert stream timestamp to microseconds and calculate offset in milliseconds
+        quint64 streamStartUSecs = static_cast<quint64>(streamStartUnix * 1000000.0);
+        qint64 offsetMs = 0;
+        if (tlogStartUSecs > 0 && streamStartUSecs > 0) {
+            offsetMs = static_cast<qint64>((streamStartUSecs - tlogStartUSecs) / 1000);
+        }
+        
+        // Convert relative path to absolute (relative to metadata folder root)
+        if (!videoPath.isEmpty() && QFileInfo(videoPath).isRelative()) {
+            videoPath = QDir(metadataFolderPath).filePath(videoPath);
+        }
+        
+        _rgbVideoInfo.videoPath = videoPath;
+        _rgbVideoInfo.offsetMs = offsetMs;
+        qCDebug(LogReplayLinkControllerLog) << "RGB video:" << videoPath << "offset:" << offsetMs << "ms"
+                                             << "(stream:" << streamStartUSecs << "usecs)";
+    }
+    
+    // Stream 2 = Thermal
+    if (streams.contains("2")) {
+        QJsonObject stream2 = streams["2"].toObject();
+        QString videoPath = stream2["video_file_path"].toString();
+        double streamStartUnix = stream2["start_timestamp_unix"].toDouble();
+        
+        // Convert stream timestamp to microseconds and calculate offset in milliseconds
+        quint64 streamStartUSecs = static_cast<quint64>(streamStartUnix * 1000000.0);
+        qint64 offsetMs = 0;
+        if (tlogStartUSecs > 0 && streamStartUSecs > 0) {
+            offsetMs = static_cast<qint64>((streamStartUSecs - tlogStartUSecs) / 1000);
+        }
+        
+        // Convert relative path to absolute (relative to metadata folder root)
+        if (!videoPath.isEmpty() && QFileInfo(videoPath).isRelative()) {
+            videoPath = QDir(metadataFolderPath).filePath(videoPath);
+        }
+        
+        _thermalVideoInfo.videoPath = videoPath;
+        _thermalVideoInfo.offsetMs = offsetMs;
+        qCDebug(LogReplayLinkControllerLog) << "Thermal video:" << videoPath << "offset:" << offsetMs << "ms"
+                                             << "(stream:" << streamStartUSecs << "usecs)";
+    }
+    
+    qCDebug(LogReplayLinkControllerLog) << "Found flight_id:" << flightId;
+    
+    // 8. Set the link (this triggers the normal flow)
+    setLink(link);
+    
+    // 9. Set up video synchronization if we have video files
+    if (!_rgbVideoInfo.videoPath.isEmpty() || !_thermalVideoInfo.videoPath.isEmpty()) {
+        emit videoMetadataLoaded();
+        
+        // Get CustomVideoManager and load videos
+        CustomPlugin* plugin = qobject_cast<CustomPlugin*>(QGCCorePlugin::instance());
+        if (!plugin || !plugin->customVideoManager()) {
+            qCWarning(LogReplayLinkControllerLog) << "CustomPlugin or CustomVideoManager not available";
+            return false;
+        }
+        CustomVideoManager* videoMgr = plugin ? plugin->customVideoManager() : nullptr;
+        if (videoMgr) {
+            qCDebug(LogReplayLinkControllerLog) << "Setting up video replay synchronization";
+            qCDebug(LogReplayLinkControllerLog) << "  RGB:" << _rgbVideoInfo.videoPath << "offset:" << _rgbVideoInfo.offsetMs << "ms";
+            qCDebug(LogReplayLinkControllerLog) << "  Thermal:" << _thermalVideoInfo.videoPath << "offset:" << _thermalVideoInfo.offsetMs << "ms";
+            
+            bool loaded = videoMgr->enterReplayMode(
+                _rgbVideoInfo.videoPath,
+                _thermalVideoInfo.videoPath,
+                _rgbVideoInfo.offsetMs,
+                _thermalVideoInfo.offsetMs
+            );
+            
+            if (loaded) {
+                // Connect tlog playback state to video playback
+                connect(link, &LogReplayLink::playbackStarted,
+                    videoMgr, &CustomVideoManager::startReplayPlayback,
+                    Qt::UniqueConnection);
+                connect(link, &LogReplayLink::playbackPaused,
+                    videoMgr, &CustomVideoManager::pauseReplayPlayback,
+                    Qt::UniqueConnection);
+                // Connect manual slider moves to video seeking
+                connect(link, &LogReplayLink::playheadMoved,
+                    videoMgr, &CustomVideoManager::seekToPosition,
+                    Qt::UniqueConnection);
+                
+                qCDebug(LogReplayLinkControllerLog) << "Video replay synchronized with tlog playback";
+            } else {
+                qCWarning(LogReplayLinkControllerLog) << "Failed to load replay videos";
+            }
+        }
+    }
+    
+    qCDebug(LogReplayLinkControllerLog) << "Successfully loaded replay from metadata folder";
+    return true;
+}
+
+QString LogReplayLinkController::_findTlogByFlightId(const QString &flightId)
+{
+    // Search standard telemetry directory
+    QString telemetryDir = SettingsManager::instance()->appSettings()->telemetrySavePath();
+    
+    QDir dir(telemetryDir);
+    
+    // Try exact match with .tlog extension
+    QString tlogName = flightId + ".tlog";
+    if (dir.exists(tlogName)) {
+        QString fullPath = dir.filePath(tlogName);
+        qCDebug(LogReplayLinkControllerLog) << "Found exact tlog match:" << fullPath;
+        return fullPath;
+    }
+    
+    // Try searching for files containing the flight_id (in case of different naming)
+    QStringList tlogFiles = dir.entryList(QStringList() << "*.tlog", QDir::Files);
+    for (const QString &fileName : tlogFiles) {
+        if (fileName.contains(flightId)) {
+            QString fullPath = dir.filePath(fileName);
+            qCDebug(LogReplayLinkControllerLog) << "Found matching tlog:" << fullPath;
+            return fullPath;
+        }
+    }
+    
+    qCWarning(LogReplayLinkControllerLog) << "Tlog not found for flight_id:" << flightId << "in" << telemetryDir;
+    return QString();
 }

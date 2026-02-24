@@ -17,10 +17,10 @@ Rectangle {
         // NOTE: Allowing replay with active connections to support external data collectors
         // (e.g., component 25) that need to synchronize with replay for sensor data streaming.
         // The replay link creates a separate vehicle instance for the log data.
-        // if (globals.activeVehicle) {
-        //     mainWindow.showMessageDialog(qsTr("Log Replay"), qsTr("You must close all connections prior to replaying a log."))
-        //     return
-        // }
+        if (globals.activeVehicle) {
+            mainWindow.showMessageDialog(qsTr("Log Replay"), qsTr("You must close all connections prior to replaying a log."))
+            return
+        }
 
         filePicker.openForLoad()
     }
@@ -38,6 +38,16 @@ Rectangle {
         }
 
         property string _logFileExtension: QGroundControl.settingsManager.appSettings.telemetryFileExtension
+    }
+
+    QGCFileDialog {
+        id: folderPicker
+        title: qsTr("Select Metadata Folder")
+        selectFolder: true
+        folder: QGroundControl.settingsManager.appSettings.telemetrySavePath
+        onAcceptedForLoad: (folderPath) => {
+            controller.loadFromMetadataFolder(folderPath)
+        }
     }
 
     LogReplayLinkController {
@@ -80,6 +90,11 @@ Rectangle {
             visible: controller.link && controller.statusMessage !== ""
             Layout.maximumWidth: ScreenTools.defaultFontPixelWidth * 30
             elide: Text.ElideRight
+        }
+
+        QGCButton {
+            text: "Load Metadata Folder"
+            onClicked: folderPicker.openForLoad()
         }
 
         QGCButton {

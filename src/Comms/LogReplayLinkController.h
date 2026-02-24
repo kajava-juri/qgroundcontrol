@@ -59,6 +59,17 @@ public:
     // Public method for external components to update replay status
     Q_INVOKABLE void setReplayDataStatus(ReplayDataStatus status, const QString &message = QString());
     
+    // Load replay from metadata folder (finds matching .tlog automatically)
+    Q_INVOKABLE bool loadFromMetadataFolder(const QString &metadataFolderPath);
+    
+    struct VideoStreamInfo {
+        QString videoPath;
+        qint64 offsetMs = 0;  // Milliseconds offset from tlog start
+    };
+    
+    VideoStreamInfo rgbVideoInfo() const { return _rgbVideoInfo; }
+    VideoStreamInfo thermalVideoInfo() const { return _thermalVideoInfo; }
+    
     // Get the active replay controller instance (if any)
     static LogReplayLinkController* activeInstance() { return _activeInstance; }
 
@@ -71,6 +82,7 @@ signals:
     void totalTimeChanged(const QString &totalTime);
     void replayDataStatusChanged(ReplayDataStatus status);
     void statusMessageChanged(const QString &message);
+    void videoMetadataLoaded();  // Emitted when replay is loaded with video files
 
 private slots:
     void _currentLogTimeSecs(uint32_t secs);
@@ -85,6 +97,7 @@ private slots:
 private:
     static QString _secondsToHMS(uint32_t seconds);
     QString _extractFlightId(const QString &filename);
+    QString _findTlogByFlightId(const QString &flightId);
     void _requestReplayDataCheck(const QString &flightId);
     void _handleStatusTextMessage(const mavlink_message_t &message);
     void _setReplayDataStatus(ReplayDataStatus status, const QString &message = QString());
@@ -98,6 +111,10 @@ private:
     QString _totalTime;
     QString _statusMessage;
     QString _currentFlightId;
+    QString _replayFlightId;
+    QString _metadataFolderPath;  // Root folder of loaded metadata
+    VideoStreamInfo _rgbVideoInfo;
+    VideoStreamInfo _thermalVideoInfo;
     ReplayDataStatus _replayDataStatus = NotRequired;
     QPointer<LogReplayLink> _link;
     

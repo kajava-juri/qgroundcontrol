@@ -41,6 +41,9 @@ public:
     Q_INVOKABLE static void deleteFile(const QString &filename);
 
     Q_INVOKABLE static QString urlToLocalFile(QUrl url);
+    
+    /// Returns the local file path from a folder URL
+    Q_INVOKABLE static QString folderUrlToLocalFile(QUrl url);
 
     /// Important: Should only be used in mobile builds where default save location cannot be changed.
     /// Returns the standard QGC location portion of a fully qualified folder path.
