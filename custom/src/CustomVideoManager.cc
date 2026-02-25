@@ -755,9 +755,9 @@ bool CustomVideoManager::enterReplayMode(const QString& rgbVideoPath, const QStr
         exitReplayMode();
     }
 
-    qcDebug(CustomVideoManagerLog) << "Entering replay mode";
-    qcDebug(CustomVideoManagerLog) << "  RGB:" << rgbVideoPath << "offset:" << rgbOffsetMs << "ms";
-    qcDebug(CustomVideoManagerLog) << "  Thermal:" << thermalVideoPath << "offset:" << thermalOffsetMs << "ms";
+    qCDebug(CustomVideoManagerLog) << "Entering replay mode";
+    qCDebug(CustomVideoManagerLog) << "  RGB:" << rgbVideoPath << "offset:" << rgbOffsetMs << "ms";
+    qCDebug(CustomVideoManagerLog) << "  Thermal:" << thermalVideoPath << "offset:" << thermalOffsetMs << "ms";
 
     // Stop all live streams - disable auto-restart so they don't fight us
     for (int i = 0; i < STREAM_COUNT; i++) {
@@ -807,6 +807,27 @@ bool CustomVideoManager::enterReplayMode(const QString& rgbVideoPath, const QStr
     }
 
     _replay.active = true;
+    _replay.currentTlogTimeSecs = 0;
+
+    // Create timer for checking delayed videos (100ms = 10Hz for sub-second precision)
+    if (!_replay.delayedVideoTimer) {
+        _replay.delayedVideoTimer = new QTimer(this);
+        _replay.delayedVideoTimer->setInterval(100);  // 100ms checks
+        connect(_replay.delayedVideoTimer, &QTimer::timeout, this, &CustomVideoManager::_checkDelayedVideos);
+    }
+    
+    // Start timer if any videos have negative offsets
+    bool hasDelayedVideos = false;
+    for (int i = 0; i < STREAM_COUNT; i++) {
+        if (_replay.streams[i].loaded && _replay.streams[i].offsetMs < 0) {
+            hasDelayedVideos = true;
+            break;
+        }
+    }
+    if (hasDelayedVideos) {
+        _replay.delayedVideoTimer->start();
+        qCDebug(CustomVideoManagerLog) << "Started delayed video monitoring timer (100ms)";
+    }
 
     // Start all streams PAUSED at initial offset position - wait for user to press play
     for (int i = 0; i < STREAM_COUNT; i++) {
@@ -950,6 +971,13 @@ gboolean CustomVideoManager::_onBusMessage(GstBus* bus, GstMessage* message, gpo
                                         0)) {
                 qCDebug(CustomVideoManagerLog) << "Replay stream" << idx << "seeked to start";
                 gst_element_set_state(pipeline, GST_STATE_PAUSED);
+                
+                // Reset readyToPlay for videos with negative offsets
+                if (manager->_replay.streams[idx].offsetMs < 0) {
+                    manager->_replay.streams[idx].readyToPlay = false;
+                    qCDebug(CustomVideoManagerLog) << "Replay stream" << idx 
+                                                    << "reset readyToPlay (negative offset video looped)";
+                }
             } else {
                 qCWarning(CustomVideoManagerLog) << "Replay stream" << idx << "failed to seek";
             }
@@ -991,6 +1019,9 @@ void CustomVideoManager::seekToPosition(quint32 tlogTimeSecs)
         return;
     }
     
+    // Cache time for delayed video timer
+    _replay.currentTlogTimeSecs = tlogTimeSecs;
+    
     qint64 tlogTimeMs = static_cast<qint64>(tlogTimeSecs) * 1000;
     
     for (int i = 0; i < STREAM_COUNT; i++) {
@@ -1015,14 +1046,26 @@ void CustomVideoManager::seekToPosition(quint32 tlogTimeSecs)
                     static_cast<GstSeekFlags>(GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_KEY_UNIT),
                     0);
                 rs.readyToPlay = false;
+                
+                // Restart timer to monitor when video should start
+                if (_replay.delayedVideoTimer && !_replay.delayedVideoTimer->isActive()) {
+                    _replay.delayedVideoTimer->start();
+                    qCDebug(CustomVideoManagerLog) << "Restarted delayed video timer (seeked before video start)";
+                }
             }
             continue;
         }
         
         // Video is ready to play
         if (!rs.readyToPlay) {
-            qCDebug(CustomVideoManagerLog) << "Stream" << i << "now ready - unpausing";
+            qCDebug(CustomVideoManagerLog) << "Stream" << i << "now ready (tlog caught up)";
             rs.readyToPlay = true;
+            
+            // If we're currently playing, start this stream now
+            if (_replay.isPlaying) {
+                gst_element_set_state(rs.pipeline, GST_STATE_PLAYING);
+                qCDebug(CustomVideoManagerLog) << "Stream" << i << "starting playback (was waiting for tlog)";
+            }
         }
         
         // Only seek if time changed significantly (avoid sub-second jitter)
@@ -1031,7 +1074,7 @@ void CustomVideoManager::seekToPosition(quint32 tlogTimeSecs)
         qint64 seekDelta = qAbs(seekPos - lastSeekPos);
         
         // Only seek if we're more than 500ms off (accounts for keyframe seeking inaccuracy)
-        if (seekDelta < 500 * GST_MSECOND) {
+        if (seekDelta < 100 * GST_MSECOND) {
             continue;
         }
         
@@ -1040,7 +1083,7 @@ void CustomVideoManager::seekToPosition(quint32 tlogTimeSecs)
         gboolean seekResult = gst_element_seek_simple(
             rs.pipeline, 
             GST_FORMAT_TIME,
-            static_cast<GstSeekFlags>(GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_KEY_UNIT),
+            static_cast<GstSeekFlags>(GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_ACCURATE),
             seekPos
         );
         
@@ -1059,13 +1102,29 @@ void CustomVideoManager::startReplayPlayback()
     }
     
     qCDebug(CustomVideoManagerLog) << "Starting replay video playback";
+    _replay.isPlaying = true;
     
     for (int i = 0; i < STREAM_COUNT; i++) {
         if (_replay.streams[i].pipeline && _replay.streams[i].loaded) {
-            gst_element_set_state(_replay.streams[i].pipeline, GST_STATE_PLAYING);
-            qCDebug(CustomVideoManagerLog) << "Stream" << i << "now PLAYING";
+            // Only start if video is ready (for negative offsets, wait until tlog catches up)
+            if (_replay.streams[i].readyToPlay) {
+                gst_element_set_state(_replay.streams[i].pipeline, GST_STATE_PLAYING);
+                qCDebug(CustomVideoManagerLog) << "Stream" << i << "now PLAYING";
+            } else {
+                qCDebug(CustomVideoManagerLog) << "Stream" << i << "not ready yet (negative offset) - keeping PAUSED";
+            }
         }
     }
+}
+
+void CustomVideoManager::updateReplayTime(quint32 tlogTimeSecs)
+{
+    if (!_replay.active) {
+        return;
+    }
+    
+    // Just update cached time - no seeking (used during normal playback)
+    _replay.currentTlogTimeSecs = tlogTimeSecs;
 }
 
 void CustomVideoManager::pauseReplayPlayback()
@@ -1075,6 +1134,7 @@ void CustomVideoManager::pauseReplayPlayback()
     }
     
     qCDebug(CustomVideoManagerLog) << "Pausing replay video playback";
+    _replay.isPlaying = false;
     
     for (int i = 0; i < STREAM_COUNT; i++) {
         if (_replay.streams[i].pipeline && _replay.streams[i].loaded) {
@@ -1090,6 +1150,11 @@ void CustomVideoManager::exitReplayMode()
     qCWarning(CustomVideoManagerLog) << "Exiting replay mode";
 
     _replay.active = false;
+    
+    // Stop delayed video timer
+    if (_replay.delayedVideoTimer) {
+        _replay.delayedVideoTimer->stop();
+    }
 
     for (int i = 0; i < STREAM_COUNT; i++) {
         ReplayStreamInfo& rs = _replay.streams[i];
@@ -1120,4 +1185,56 @@ void CustomVideoManager::exitReplayMode()
     }
 
     emit replayModeChanged(false);
+}
+
+void CustomVideoManager::_checkDelayedVideos()
+{
+    if (!_replay.active || !_replay.isPlaying) {
+        return;
+    }
+    
+    // Use cached tlog time from last seekToPosition call
+    qint64 tlogTimeMs = static_cast<qint64>(_replay.currentTlogTimeSecs) * 1000;
+    bool allReady = true;
+    
+    for (int i = 0; i < STREAM_COUNT; i++) {
+        ReplayStreamInfo& rs = _replay.streams[i];
+        
+        if (!rs.pipeline || !rs.loaded || rs.readyToPlay) {
+            continue;
+        }
+        
+        allReady = false;
+        
+        // Calculate if video should start now
+        qint64 videoTimeMs = tlogTimeMs + rs.offsetMs;
+        
+        if (videoTimeMs >= 0) {
+            qCDebug(CustomVideoManagerLog) << "Stream" << i 
+                                            << "delayed video now ready at tlog time" << tlogTimeMs << "ms"
+                                            << "(offset:" << rs.offsetMs << "ms)";
+            rs.readyToPlay = true;
+            
+            // Start playing immediately
+            gst_element_set_state(rs.pipeline, GST_STATE_PLAYING);
+            qCDebug(CustomVideoManagerLog) << "Stream" << i << "starting delayed playback";
+            
+            // Seek to correct position (accounting for any overshoot)
+            if (videoTimeMs > 0) {
+                gst_element_seek_simple(
+                    rs.pipeline,
+                    GST_FORMAT_TIME,
+                    static_cast<GstSeekFlags>(GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_ACCURATE),
+                    videoTimeMs * GST_MSECOND
+                );
+                qCDebug(CustomVideoManagerLog) << "Stream" << i << "seeked to" << videoTimeMs << "ms";
+            }
+        }
+    }
+    
+    // Stop timer once all delayed videos are ready
+    if (allReady && _replay.delayedVideoTimer) {
+        _replay.delayedVideoTimer->stop();
+        qCDebug(CustomVideoManagerLog) << "All delayed videos ready - stopped monitoring timer";
+    }
 }

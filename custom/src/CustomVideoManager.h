@@ -87,6 +87,7 @@ private:
     void _restartVideo(int streamIndex);
     void _setActiveVehicle(Vehicle* vehicle);
     void _communicationLostChanged(bool communicationLost);
+    void _checkDelayedVideos();  // Check if any delayed videos are ready to start
     bool _openReplayStream(int streamIndex, const QString& videoPath, QQuickItem* widget);
     static gboolean _onBusMessage(GstBus* bus, GstMessage* message, gpointer user_data);
 
@@ -100,6 +101,7 @@ public:
                                       qint64 rgbOffsetMs = 0, qint64 thermalOffsetMs = 0);
     Q_INVOKABLE void exitReplayMode();
     Q_INVOKABLE void seekToPosition(quint32 tlogTimeSecs);  // For manual slider seeking
+    Q_INVOKABLE void updateReplayTime(quint32 tlogTimeSecs);  // Update cached time (no seeking)
     Q_INVOKABLE void startReplayPlayback();  // Start playing videos
     Q_INVOKABLE void pauseReplayPlayback();  // Pause videos  // Seek based on tlog playhead position
 
@@ -133,7 +135,10 @@ private:
     struct ReplayState {
         std::array<ReplayStreamInfo, STREAM_COUNT> streams;
         bool active = false;
+        bool isPlaying = false;  // Track if replay is currently playing
         double playbackSpeed = 1.0;
+        quint32 currentTlogTimeSecs = 0;  // Cached from seekToPosition calls
+        QTimer* delayedVideoTimer = nullptr;  // Timer for checking delayed videos (negative offsets)
     };
 
     ReplayState _replay;

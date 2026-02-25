@@ -24,7 +24,7 @@
     <file alias="DataCollectionDialog.qml">src/DataCollectionDialog.qml</file>
     <file alias="QGroundControl/Toolbar/DataCollectionIndicator.qml">src/DataCollectionIndicator.qml</file>
     <file alias="QGroundControl/Toolbar/DCAction.qml">res/Custom/Widgets/DataCollectionControlIndicator.qml</file>
-  </qresource>
+    <file alias="QGroundControl/Controls/LogReplayStatusBar.qml">qml/QmlControls/LogReplayStatusBar.qml</file>        <file alias="QGroundControl/Controls/QGCFileDialog.qml">qml/QmlControls/QGCFileDialog.qml</file>  </qresource>
   <qresource prefix="/Custom/qml">
     <file alias="CustomSettings.qml">src/CustomSettings.qml</file>
   </qresource>
