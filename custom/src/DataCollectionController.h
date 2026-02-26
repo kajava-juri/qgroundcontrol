@@ -141,10 +141,13 @@ private:
     void _sendCollectionMetadata(bool collectionStarted);     // Send detailed data via TUNNEL
     void _handleReplayDataCheckRequest(const QString &flightId);  // Handle replay data availability check
     void _sendReplayDataResponse(bool dataAvailable, const QString &flightId);  // Send response to QGC
+    void _downloadReplayData(const QString& remoteUsername, const QString& remoteHostName, const QString& remoteFilePath, const QString& localDirectoryPath);
+    void _getReplayDataRemotePath();
     
     QNetworkAccessManager _networkManager;
     QTimer _streamInfoTimer;            // Timer for periodic requests
     int _streamInfoRetries{0};          // Counter for alternating between modern/legacy commands
+    QString _remoteDataFetchpath;
     
     static constexpr int STREAM_INFO_POLL_INTERVAL_MS = 5000;  // Poll every 5 seconds
 };

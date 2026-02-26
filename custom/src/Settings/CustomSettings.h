@@ -27,4 +27,12 @@ public:
     DEFINE_SETTINGFACT(qgcIp)
     DEFINE_SETTINGFACT(qgcPort)
     DEFINE_SETTINGFACT(useHardwareEncoding)
+    DEFINE_SETTINGFACT(remoteUserName)
+
+    Q_PROPERTY(QString dataCollectionSaveDirectory        READ dataCollectionSaveDirectory          CONSTANT)
+
+    QString dataCollectionSaveDirectory     ();
+
+private:
+    void _checkCustomSavePathDirectories();
 };

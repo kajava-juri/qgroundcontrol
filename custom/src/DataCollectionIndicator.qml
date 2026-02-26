@@ -152,6 +152,13 @@ Item {
                 visible: fact !== null
             }
 
+            LabelledFactTextField {
+                Layout.fillWidth: true
+                label: qsTr("Remote User Name")
+                fact: _customSettings ? _customSettings.remoteUserName : null
+                visible: fact !== null
+            }
+
             // RowLayout {
             //     Layout.fillWidth: true
             //     spacing: ScreenTools.defaultFontPixelWidth * 2

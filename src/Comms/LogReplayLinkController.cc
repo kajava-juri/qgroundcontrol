@@ -478,8 +478,8 @@ bool LogReplayLinkController::loadFromMetadataFolder(const QString &metadataFold
             bool loaded = videoMgr->enterReplayMode(
                 _rgbVideoInfo.videoPath,
                 _thermalVideoInfo.videoPath,
-                _rgbVideoInfo.offsetMs,
-                _thermalVideoInfo.offsetMs
+                - _rgbVideoInfo.offsetMs,
+                - _thermalVideoInfo.offsetMs
             );
             
             if (loaded) {
@@ -493,6 +493,10 @@ bool LogReplayLinkController::loadFromMetadataFolder(const QString &metadataFold
                 // Connect manual slider moves to video seeking
                 connect(link, &LogReplayLink::playheadMoved,
                     videoMgr, &CustomVideoManager::seekToPosition,
+                    Qt::UniqueConnection);
+                // Connect continuous time updates to cache time (no seeking)
+                connect(link, &LogReplayLink::currentLogTimeSecs,
+                    videoMgr, &CustomVideoManager::updateReplayTime,
                     Qt::UniqueConnection);
                 
                 qCDebug(LogReplayLinkControllerLog) << "Video replay synchronized with tlog playback";

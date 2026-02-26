@@ -76,6 +76,13 @@
             "longDesc":  "Enable hardware-accelerated video encoding",
             "type":      "bool",
             "default":   false
+        },
+        {
+            "name":      "remoteUserName",
+            "shortDesc": "Remote User Name",
+            "longDesc":  "Username for remote server access during data collection replay",
+            "type":      "string",
+            "default":   "drone"
         }
     ]
 }

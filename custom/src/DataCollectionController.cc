@@ -102,7 +102,7 @@ void DataCollectionController::_sendHttpRequest(QString endpoint) {
     qCDebug(DataCollectionControllerLog) << "Sending HTTP request to endpoint:" << endpoint;
 
     CustomPlugin* plugin = qobject_cast<CustomPlugin*>(QGCCorePlugin::instance());
-    if (!plugin && !plugin->customSettings()) {
+    if (!plugin || !plugin->customSettings()) {
         qCDebug(DataCollectionControllerLog) << "CustomPlugin or CustomSettings not available";
         return;
     }
@@ -150,7 +150,7 @@ void DataCollectionController::_getStreamInfoHttp() {
     qCDebug(DataCollectionControllerLog) << "Requesting stream info via HTTP";
 
     CustomPlugin* plugin = qobject_cast<CustomPlugin*>(QGCCorePlugin::instance());
-    if (!plugin && !plugin->customSettings()) {
+    if (!plugin || !plugin->customSettings()) {
         qCDebug(DataCollectionControllerLog) << "CustomPlugin or CustomSettings not available";
         return;
     }
@@ -586,6 +586,10 @@ void DataCollectionController::_handleCollectionEnd()
     } else {
         qCWarning(DataCollectionControllerLog) << "Could not access CustomVideoManager for stream cleanup";
     }
+
+    // Request the remote path and download replay data via rsync
+    _getReplayDataRemotePath();
+    
     
     // Update recording state
     if (_isCollecting) {
@@ -595,6 +599,103 @@ void DataCollectionController::_handleCollectionEnd()
     
     
     qCDebug(DataCollectionControllerLog) << "Collection cleanup completed";
+}
+
+void DataCollectionController::_downloadReplayData(const QString& remoteUsername, const QString& remoteHostName, const QString& remoteFilePath, const QString& localDirectoryPath)
+{
+    qCDebug(DataCollectionControllerLog) << "Transferring data from:" << remoteFilePath << "to:" << localDirectoryPath;
+    
+    // Check if source path is local (same filesystem)
+    QDir sourceDir(remoteFilePath);
+    if (sourceDir.exists()) {
+        qCDebug(DataCollectionControllerLog) << "Source is local - using direct copy";
+        
+        // Use cp -r for local copy (faster and simpler)
+        QProcess* copyProcess = new QProcess(this);
+        QStringList arguments;
+        arguments << "-r" << remoteFilePath << localDirectoryPath;
+        
+        connect(copyProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), 
+                this, [this, copyProcess](int exitCode, QProcess::ExitStatus exitStatus) {
+            if (exitStatus == QProcess::NormalExit && exitCode == 0) {
+                qCDebug(DataCollectionControllerLog) << "Local data copy completed successfully";
+            } else {
+                qCWarning(DataCollectionControllerLog) << "Local data copy failed with exit code" << exitCode;
+            }
+            copyProcess->deleteLater();
+        });
+        
+        copyProcess->start("cp", arguments);
+    } else {
+        qCDebug(DataCollectionControllerLog) << "Source is remote - using rsync";
+        
+        // Use rsync for remote transfer
+        QProcess* rsync = new QProcess(this);
+        QStringList arguments;
+        arguments << "-avz" << QString("%1@%2:%3").arg(remoteUsername, remoteHostName, remoteFilePath) << localDirectoryPath;
+        
+        connect(rsync, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), 
+                this, [this, rsync](int exitCode, QProcess::ExitStatus exitStatus) {
+            if (exitStatus == QProcess::NormalExit && exitCode == 0) {
+                qCDebug(DataCollectionControllerLog) << "Remote data download completed successfully";
+            } else {
+                qCWarning(DataCollectionControllerLog) << "Remote data download failed with exit code" << exitCode;
+            }
+            rsync->deleteLater();
+        });
+        
+        rsync->start("rsync", arguments);
+    }
+}
+
+void DataCollectionController::_getReplayDataRemotePath()
+{
+    qCDebug(DataCollectionControllerLog) << "Requesting collected data info via HTTP";
+
+    CustomPlugin* plugin = qobject_cast<CustomPlugin*>(QGCCorePlugin::instance());
+    if (!plugin || !plugin->customSettings()) {
+        qCDebug(DataCollectionControllerLog) << "CustomPlugin or CustomSettings not available";
+        return;
+    }
+    QString httpUrl = plugin->customSettings()->httpUrl()->rawValue().toString();
+    // Extract ip from httpUrl (assumes format http[s]://<ip>:<port>)
+    QString ipAddress = httpUrl;
+    QRegularExpression ipRegex("https?://([^:]+):\\d+");
+    QRegularExpressionMatch match = ipRegex.match(httpUrl);
+    if (match.hasMatch()) {
+        ipAddress = match.captured(1);
+    }
+    
+    // _remoteDataFetchpath = QString("%1@%2:%3").arg(plugin->customSettings()->remoteUserName()->rawValue().toString(), ipAddress, plugin->customSettings()->remoteDataPath()->rawValue().toString());
+    
+    QNetworkRequest request(QUrl(QString(httpUrl + "/data_collection_info")));
+    request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+
+    QNetworkReply* reply = _networkManager.get(request);
+
+    connect(reply, &QNetworkReply::finished, this, [this, reply, ipAddress, plugin]() {
+        if (reply->error() == QNetworkReply::NoError) {
+            QByteArray responseData = reply->readAll();
+            qCDebug(DataCollectionControllerLog) << "Data collection info HTTP request succeeded. Response:" << responseData;
+            QJsonDocument jsonDoc = QJsonDocument::fromJson(responseData);
+            if (jsonDoc.isObject()) {
+                QJsonObject jsonObj = jsonDoc.object();
+                if (jsonObj.contains("folder_path")) {
+                    QString folderPath = jsonObj["folder_path"].toString();
+                    qCDebug(DataCollectionControllerLog) << "Received data collection folder path:" << folderPath;
+                    // Now we have the remote folder path, we can start the rsync download
+                    _downloadReplayData(plugin->customSettings()->remoteUserName()->rawValue().toString(), ipAddress, folderPath, plugin->customSettings()->dataCollectionSaveDirectory());
+                } else {
+                    qCWarning(DataCollectionControllerLog) << "Response JSON does not contain 'folder_path'";
+                }
+            } else {
+                qCWarning(DataCollectionControllerLog) << "Invalid JSON response for data collection info";
+            }
+        } else {
+            qCDebug(DataCollectionControllerLog) << "Data collection info HTTP request failed. Error:" << reply->errorString();
+        }
+        reply->deleteLater();
+    });
 }
 
 void DataCollectionController::_startPeriodicStreamInfoRequest()

@@ -261,17 +261,6 @@ Item {
     }
     }
 
-    // Replay Mode Test Button (top center)
-    QGCButton {
-        id: replayButton
-        anchors.top: parent.top
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.topMargin: ScreenTools.defaultFontPixelHeight
-        text: "Open Replay Mode"
-        onClicked: replayDialogVisible = true
-        z: 100
-    }
-
     // Replay Mode Dialog
     Rectangle {
         id: replayDialog
