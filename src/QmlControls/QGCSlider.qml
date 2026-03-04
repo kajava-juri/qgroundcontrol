@@ -43,7 +43,7 @@ Slider {
         width:          control.horizontal ? control.availableWidth : implicitWidth
         height:         control.horizontal ? implicitHeight : control.availableHeight
         radius:         control._barHeight / 2
-        color:          qgcPal.button
+        color:          Qt.rgba(1, 0, 0, 1)
         border.width:   1
         border.color:   qgcPal.buttonText
     }
@@ -57,7 +57,7 @@ Slider {
                             control.topPadding + control.visualPosition * (control.availableHeight - height)
         implicitWidth:  _radius * 2
         implicitHeight: _radius * 2
-        color:          qgcPal.button
+        color:          Qt.rgba(0, 1, 0, 1)
         border.color:   qgcPal.buttonText
         border.width:   1
         radius:         _radius

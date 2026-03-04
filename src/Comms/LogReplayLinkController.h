@@ -29,8 +29,10 @@ class LogReplayLinkController : public QObject
     Q_PROPERTY(QString          totalTime       MEMBER  _totalTime                                  NOTIFY totalTimeChanged)
     Q_PROPERTY(QString          playheadTime    MEMBER  _playheadTime                               NOTIFY playheadTimeChanged)
     Q_PROPERTY(qreal            playbackSpeed   MEMBER  _playbackSpeed                              NOTIFY playbackSpeedChanged)
+    Q_PROPERTY(uint32_t         totalDurationSecs READ  totalDurationSecs                           NOTIFY totalDurationSecsChanged)
     Q_PROPERTY(ReplayDataStatus replayDataStatus READ   replayDataStatus                            NOTIFY replayDataStatusChanged)
     Q_PROPERTY(QString          statusMessage   MEMBER  _statusMessage                              NOTIFY statusMessageChanged)
+    Q_PROPERTY(QVariantList     videoReplaySegments READ videoReplaySegments                        NOTIFY videoReplaySegmentsChanged)
 
 public:
     enum ReplayDataStatus {
@@ -55,6 +57,8 @@ public:
 
     ReplayDataStatus replayDataStatus() const { return _replayDataStatus; }
     QString currentFlightId() const { return _currentFlightId; }
+    QVariantList videoReplaySegments() const;
+    uint32_t totalDurationSecs() const { return _totalDurationSecs; }
     
     // Public method for external components to update replay status
     Q_INVOKABLE void setReplayDataStatus(ReplayDataStatus status, const QString &message = QString());
@@ -65,6 +69,7 @@ public:
     struct VideoStreamInfo {
         QString videoPath;
         qint64 offsetMs = 0;  // Milliseconds offset from tlog start
+        qint64 durationMs = 0; // Duration of the video in milliseconds
     };
     
     VideoStreamInfo rgbVideoInfo() const { return _rgbVideoInfo; }
@@ -80,9 +85,11 @@ signals:
     void playbackSpeedChanged(qreal playbackSpeed);
     void playheadTimeChanged(const QString &playheadTime);
     void totalTimeChanged(const QString &totalTime);
+    void totalDurationSecsChanged(uint32_t totalDurationSecs);
     void replayDataStatusChanged(ReplayDataStatus status);
     void statusMessageChanged(const QString &message);
     void videoMetadataLoaded();  // Emitted when replay is loaded with video files
+    void videoReplaySegmentsChanged();
 
 private slots:
     void _currentLogTimeSecs(uint32_t secs);
@@ -106,6 +113,7 @@ private:
     bool _isPlaying = false;
     qreal _percentComplete = 0;
     uint32_t _playheadSecs = 0;
+    uint32_t _totalDurationSecs = 0;
     qreal _playbackSpeed = 1;
     QString _playheadTime;
     QString _totalTime;

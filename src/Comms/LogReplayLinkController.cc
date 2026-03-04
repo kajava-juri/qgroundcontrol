@@ -64,6 +64,9 @@ void LogReplayLinkController::setLink(LogReplayLink *link)
         _totalTime.clear();
         emit totalTimeChanged(_totalTime);
 
+        _totalDurationSecs = 0;
+        emit totalDurationSecsChanged(_totalDurationSecs);
+
         _setReplayDataStatus(NotRequired);
         _currentFlightId.clear();
 
@@ -129,6 +132,10 @@ void LogReplayLinkController::setPercentComplete(qreal percentComplete) const
 
 void LogReplayLinkController::_logFileStats(uint32_t logDurationSecs)
 {
+    if (_totalDurationSecs != logDurationSecs) {
+        _totalDurationSecs = logDurationSecs;
+        emit totalDurationSecsChanged(_totalDurationSecs);
+    }
     const QString totalTime = _secondsToHMS(logDurationSecs);
     if (totalTime != _totalTime) {
         _totalTime = totalTime;
@@ -191,6 +198,19 @@ QString LogReplayLinkController::_secondsToHMS(uint32_t seconds)
     }
 
     return result;
+}
+
+QVariantList LogReplayLinkController::videoReplaySegments() const
+{
+    CustomPlugin* plugin = qobject_cast<CustomPlugin*>(QGCCorePlugin::instance());
+    qCDebug(LogReplayLinkControllerLog) << "Getting video replay segments for QML - plugin instance:" << plugin;
+    if (!plugin || !plugin->customVideoManager()) {
+        qCDebug(LogReplayLinkControllerLog) << "No custom video manager available, returning empty segments list";
+        return QVariantList();
+    }
+    QVariantList segments = plugin->customVideoManager()->videoReplaySegments();
+    qCDebug(LogReplayLinkControllerLog) << "Returning" << segments.size() << "segments:" << segments;
+    return segments;
 }
 
 void LogReplayLinkController::_linkConnected()
@@ -498,6 +518,14 @@ bool LogReplayLinkController::loadFromMetadataFolder(const QString &metadataFold
                 connect(link, &LogReplayLink::currentLogTimeSecs,
                     videoMgr, &CustomVideoManager::updateReplayTime,
                     Qt::UniqueConnection);
+                
+                // Connect video segment changes for future updates
+                connect(videoMgr, &CustomVideoManager::videoReplaySegmentsChanged,
+                    this, &LogReplayLinkController::videoReplaySegmentsChanged,
+                    Qt::UniqueConnection);
+                
+                // Notify QML that segments are ready (videos already loaded above)
+                emit videoReplaySegmentsChanged();
                 
                 qCDebug(LogReplayLinkControllerLog) << "Video replay synchronized with tlog playback";
             } else {

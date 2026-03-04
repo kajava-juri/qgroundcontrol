@@ -11,6 +11,7 @@
 #include <QtQuick/QQuickWindow>
 #include <QQuickItem>
 #include <QLoggingCategory>
+#include <QVariant>
 
 #include <glib.h>
 
@@ -72,11 +73,14 @@ public:
     static constexpr int STREAM_THERMAL = 1;
     static constexpr int STREAM_COUNT = 2;
 
+    QVariantList videoReplaySegments() const;  // For QML display of replay segments
+
 signals:
     void streamStateChanged(int streamIndex, bool active);
     void streamDecodingChanged(int streamIndex, bool decoding);
     void streamUriChanged(int streamIndex, const QString& uri);
     void replayModeChanged(bool active);
+    void videoReplaySegmentsChanged();
 
 private:
 
@@ -90,6 +94,7 @@ private:
     void _checkDelayedVideos();  // Check if any delayed videos are ready to start
     bool _openReplayStream(int streamIndex, const QString& videoPath, QQuickItem* widget);
     static gboolean _onBusMessage(GstBus* bus, GstMessage* message, gpointer user_data);
+    //void _updateVideoReplaySegments();
 
 public:
     struct VideoStreamMetadata {
@@ -130,6 +135,7 @@ private:
         qint64 offsetMs = 0;              // Offset from tlog start (negative if video starts after tlog)
         bool readyToPlay = false;         // False if waiting for tlog to catch up to video start
         qint64 lastSeekTimeMs = -1000;    // Last video time we seeked to (ms) - initialized to force first seek
+        qint64 durationMs = 0;
     };
 
     struct ReplayState {

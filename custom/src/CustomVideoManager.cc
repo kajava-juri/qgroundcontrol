@@ -921,9 +921,37 @@ bool CustomVideoManager::_openReplayStream(int streamIndex,
         gst_object_unref(bus);
     }
 
+    // Set to PAUSED state to preroll pipeline (required for duration query)
+    GstStateChangeReturn ret = gst_element_set_state(pipeline, GST_STATE_PAUSED);
+    if (ret == GST_STATE_CHANGE_FAILURE) {
+        qCCritical(CustomVideoManagerLog) << "Failed to set pipeline to PAUSED for stream" << streamIndex;
+        gst_object_unref(pipeline);
+        QGCCorePlugin::instance()->releaseVideoSink(sink);
+        rs.sink = nullptr;
+        delete tempReceiver;
+        return false;
+    }
+    
+    // Wait for preroll (max 5 seconds)
+    ret = gst_element_get_state(pipeline, nullptr, nullptr, 5 * GST_SECOND);
+    if (ret == GST_STATE_CHANGE_FAILURE) {
+        qCWarning(CustomVideoManagerLog) << "Pipeline preroll failed for stream" << streamIndex;
+    }
+
+    // Now query duration (pipeline is prerolled)
+    gint64 duration = GST_CLOCK_TIME_NONE;
+    gst_element_query_duration(pipeline, GST_FORMAT_TIME, &duration);
+    qint64 durationMs = (duration != GST_CLOCK_TIME_NONE) ? (duration / GST_MSECOND) : -1;
+    
+    qCDebug(CustomVideoManagerLog) << "Stream" << streamIndex << "duration:" 
+                                     << durationMs << "ms (" << duration << "ns)";
+
+    rs.durationMs = durationMs;
     rs.pipeline = pipeline;
     rs.videoPath = videoPath;
     rs.loaded = true;
+
+    emit videoReplaySegmentsChanged();  // Notify QML that segments have changed
 
     qCWarning(CustomVideoManagerLog) << "Replay stream" << streamIndex
                                       << "opened:" << videoPath;
@@ -1237,4 +1265,23 @@ void CustomVideoManager::_checkDelayedVideos()
         _replay.delayedVideoTimer->stop();
         qCDebug(CustomVideoManagerLog) << "All delayed videos ready - stopped monitoring timer";
     }
+}
+
+QVariantList CustomVideoManager::videoReplaySegments() const {
+    QVariantList segments;
+    if (!_replay.active) {
+        return segments;
+    }
+
+    for (int i = 0; i < STREAM_COUNT; i++) {
+        const ReplayStreamInfo& rs = _replay.streams[i];
+        if (rs.loaded) {
+            QVariantMap segment;
+            segment["start"] = rs.offsetMs;
+            segment["duration"] = rs.durationMs;
+            segment["color"] = (i == 0) ? "red" : "blue"; 
+            segments.append(segment);
+        }
+    }
+    return segments;
 }
