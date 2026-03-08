@@ -33,6 +33,7 @@ class LogReplayLinkController : public QObject
     Q_PROPERTY(ReplayDataStatus replayDataStatus READ   replayDataStatus                            NOTIFY replayDataStatusChanged)
     Q_PROPERTY(QString          statusMessage   MEMBER  _statusMessage                              NOTIFY statusMessageChanged)
     Q_PROPERTY(QVariantList     videoReplaySegments READ videoReplaySegments                        NOTIFY videoReplaySegmentsChanged)
+    Q_PROPERTY(QVariantList     sessionMetadata   READ  sessionMetadata                             NOTIFY sessionMetadataChanged)
 
 public:
     enum ReplayDataStatus {
@@ -42,6 +43,15 @@ public:
         NotRequired     // No external component check needed (no link or not connected)
     };
     Q_ENUM(ReplayDataStatus)
+
+    QVariantList sessionMetadata() const {
+        QVariantList list;
+        for (const SessionMetadata& session : this->_sessionsMetadata) {
+            list.append(session.toMap());
+        }
+        qCDebug(LogReplayLinkControllerLog) << "Returning session metadata for" << list.size() << "sessions:" << list;
+        return list;
+    }
 
     explicit LogReplayLinkController(QObject *parent = nullptr);
     ~LogReplayLinkController();
@@ -65,6 +75,9 @@ public:
     
     // Load replay from metadata folder (finds matching .tlog automatically)
     Q_INVOKABLE bool loadFromMetadataFolder(const QString &metadataFolderPath);
+    
+    // Load a specific session by flight ID (must call loadFromMetadataFolder first)
+    Q_INVOKABLE bool loadSessionByFlightId(const QString &flightId);
     
     struct VideoStreamInfo {
         QString videoPath;
@@ -90,6 +103,8 @@ signals:
     void statusMessageChanged(const QString &message);
     void videoMetadataLoaded();  // Emitted when replay is loaded with video files
     void videoReplaySegmentsChanged();
+    void sessionMetadataChanged();
+    void sessionsLoaded(int sessionCount);
 
 private slots:
     void _currentLogTimeSecs(uint32_t secs);
@@ -127,4 +142,26 @@ private:
     QPointer<LogReplayLink> _link;
     
     static LogReplayLinkController* _activeInstance;  // Track active instance with a link
+
+    struct SessionMetadata {
+        QString flightId;
+        uint32_t dcDurationSecs;
+        uint32_t tlogDurationSecs;
+        bool hasVideo;
+        bool hasTlog;
+        QString tlogFilePath;
+        QList<VideoStreamInfo> videoStreams;
+
+        QVariantMap toMap() const {
+            return {
+                {"flightId", flightId},
+                {"dcDurationSecs", dcDurationSecs},
+                {"tlogDurationSecs", tlogDurationSecs},
+                {"hasVideo", hasVideo},
+                {"hasTlog", hasTlog},
+                {"tlogFilePath", tlogFilePath}
+            };
+        }
+    };
+    QList<SessionMetadata> _sessionsMetadata;
 };

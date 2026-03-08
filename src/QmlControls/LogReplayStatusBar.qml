@@ -50,10 +50,78 @@ Rectangle {
         }
     }
 
+    Component {
+        id: sessionPickerComponent
+
+        QGCPopupDialog {
+            title: qsTr("Select Session to Replay")
+            buttons: Dialog.Cancel
+
+            ColumnLayout {
+                width: ScreenTools.defaultFontPixelWidth * 80
+                spacing: ScreenTools.defaultFontPixelHeight / 2
+
+                QGCLabel {
+                    text: qsTr("Available Sessions")
+                    font.pointSize: ScreenTools.mediumFontPointSize
+                    Layout.fillWidth: true
+                }
+                ListView {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 20
+                    clip: true
+                    spacing: ScreenTools.defaultFontPixelHeight / 4
+                    
+                    model: controller.sessionMetadata
+                    
+                    delegate: QGCDelayButton {
+                        required property var modelData
+
+                        width: ListView.view.width
+                        height: ScreenTools.defaultFontPixelHeight * 2.5
+                        delay: 1000  // Hold for 1 second to confirm
+                        text: {
+                            var info = qsTr("Flight ID: %1 | Duration: %2s | Video: %3 | Tlog: %4")
+                                        .arg(modelData.flightId)
+                                        .arg(modelData.dcDurationSecs)
+                                        .arg(modelData.hasVideo ? qsTr("Yes") : qsTr("No"))
+                                        .arg(modelData.hasTlog ? qsTr("Yes") : qsTr("No"))
+                            return info
+                        }
+                        enabled: modelData.hasTlog
+                        
+                        onActivated: {
+                            if (controller.loadSessionByFlightId(modelData.flightId)) {
+                                close()
+                            }
+                        }
+                    }
+                    
+                    QGCLabel {
+                        anchors.centerIn: parent
+                        text: qsTr("No sessions found")
+                        visible: ListView.view.count === 0
+                    }
+                }
+            }
+        }
+    }
+
     LogReplayLinkController {
         id: controller
 
         onPercentCompleteChanged: (percentComplete) => slider.updatePercentComplete(percentComplete)
+
+        onSessionsLoaded: (count) => {
+            if (count > 0) {
+                sessionPickerComponent.createObject(mainWindow).open()
+            } else {
+                mainWindow.showMessageDialog(
+                    qsTr("No Sessions"), 
+                    qsTr("No valid sessions found in the selected folder")
+                )
+            }
+        }
     }
 
     RowLayout {

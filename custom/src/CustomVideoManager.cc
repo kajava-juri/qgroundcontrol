@@ -18,6 +18,7 @@
 #include "GstVideoReceiver.h"
 #include "GStreamerHelpers.h"
 #include <gst/gst.h>
+#include <QColor>
 #include <QDebug>
 
 QGC_LOGGING_CATEGORY(CustomVideoManagerLog, "CustomVideoManager")
@@ -1279,7 +1280,10 @@ QVariantList CustomVideoManager::videoReplaySegments() const {
             QVariantMap segment;
             segment["start"] = rs.offsetMs;
             segment["duration"] = rs.durationMs;
-            segment["color"] = (i == 0) ? "red" : "blue"; 
+            // Half-opaque colors (alpha = 0.5) to show overlap
+            // RGB: red (255,0,0), Thermal: light blue (0,100,255)
+            QColor color = (i == 0) ? QColor::fromRgbF(1.0, 0.0, 0.0, 0.5) : QColor::fromRgbF(0.0, 0.39, 1.0, 0.5);
+            segment["color"] = color;
             segments.append(segment);
         }
     }
