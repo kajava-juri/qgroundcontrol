@@ -148,8 +148,15 @@ private:
     QTimer _streamInfoTimer;            // Timer for periodic requests
     int _streamInfoRetries{0};          // Counter for alternating between modern/legacy commands
     QString _remoteDataFetchpath;
+    QTimer _periodicSyncTimer;          // Timer for periodic data sync during collection
+    bool _downloadInProgress{false};    // Track if rsync/cp is currently running
+    
+    void _startPeriodicDataSync();      // Start periodic backup sync
+    void _stopPeriodicDataSync();       // Stop periodic backup sync
     
     static constexpr int STREAM_INFO_POLL_INTERVAL_MS = 5000;  // Poll every 5 seconds
+    static constexpr int DATA_SYNC_INTERVAL_MS = 30000;         // Sync every 30 seconds
+    static constexpr int FINAL_SYNC_DELAY_MS = 3000;            // Wait 3s for Python to finalize metadata
 };
 
 Q_DECLARE_OPERATORS_FOR_FLAGS(DataCollectionController::VideoFlagSet)

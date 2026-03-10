@@ -238,6 +238,10 @@ void DataCollectionController::startRecording() {
         if (_vehicle) {
             _startPeriodicStreamInfoRequest();
         }
+        
+        // Start periodic data sync for incremental backups
+        _startPeriodicDataSync();
+        
         MAVLinkProtocol::instance()->startLogging();
     }
 }
@@ -573,6 +577,9 @@ void DataCollectionController::_handleCollectionEnd()
     // Stop periodic stream info requests
     _stopPeriodicStreamInfoRequest();
     
+    // Stop periodic data sync
+    _stopPeriodicDataSync();
+    
     // Explicitly stop all video streams to prevent timeout/resource leaks
     CustomPlugin* plugin = qobject_cast<CustomPlugin*>(QGCCorePlugin::instance());
     if (plugin && plugin->customVideoManager()) {
@@ -587,9 +594,17 @@ void DataCollectionController::_handleCollectionEnd()
         qCWarning(DataCollectionControllerLog) << "Could not access CustomVideoManager for stream cleanup";
     }
 
-    // Request the remote path and download replay data via rsync
-    _getReplayDataRemotePath();
-    
+    // Delay final sync to allow Python time to finalize metadata files
+    // Without this delay, rsync starts immediately and may miss the final metadata.json
+    qCDebug(DataCollectionControllerLog) << "Scheduling final data sync in" << FINAL_SYNC_DELAY_MS << "ms";
+    QTimer::singleShot(FINAL_SYNC_DELAY_MS, this, [this]() {
+        if (!_downloadInProgress) {
+            qCDebug(DataCollectionControllerLog) << "Starting final data sync";
+            _getReplayDataRemotePath();
+        } else {
+            qCDebug(DataCollectionControllerLog) << "Download still in progress, final sync will happen after current one completes";
+        }
+    });
     
     // Update recording state
     if (_isCollecting) {
@@ -597,13 +612,19 @@ void DataCollectionController::_handleCollectionEnd()
         emit isCollectingChanged();
     }
     
-    
     qCDebug(DataCollectionControllerLog) << "Collection cleanup completed";
 }
 
 void DataCollectionController::_downloadReplayData(const QString& remoteUsername, const QString& remoteHostName, const QString& remoteFilePath, const QString& localDirectoryPath)
 {
+    // Skip if download already in progress
+    if (_downloadInProgress) {
+        qCDebug(DataCollectionControllerLog) << "Download already in progress, skipping duplicate request";
+        return;
+    }
+    
     qCDebug(DataCollectionControllerLog) << "Transferring data from:" << remoteFilePath << "to:" << localDirectoryPath;
+    _downloadInProgress = true;
     
     // Check if source path is local (same filesystem)
     QDir sourceDir(remoteFilePath);
@@ -617,6 +638,7 @@ void DataCollectionController::_downloadReplayData(const QString& remoteUsername
         
         connect(copyProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), 
                 this, [this, copyProcess](int exitCode, QProcess::ExitStatus exitStatus) {
+            _downloadInProgress = false;
             if (exitStatus == QProcess::NormalExit && exitCode == 0) {
                 qCDebug(DataCollectionControllerLog) << "Local data copy completed successfully";
             } else {
@@ -629,13 +651,14 @@ void DataCollectionController::_downloadReplayData(const QString& remoteUsername
     } else {
         qCDebug(DataCollectionControllerLog) << "Source is remote - using rsync";
         
-        // Use rsync for remote transfer
+        // Use rsync for remote transfer (incremental, only transfers changed files)
         QProcess* rsync = new QProcess(this);
         QStringList arguments;
         arguments << "-avz" << QString("%1@%2:%3").arg(remoteUsername, remoteHostName, remoteFilePath) << localDirectoryPath;
         
         connect(rsync, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), 
                 this, [this, rsync](int exitCode, QProcess::ExitStatus exitStatus) {
+            _downloadInProgress = false;
             if (exitStatus == QProcess::NormalExit && exitCode == 0) {
                 qCDebug(DataCollectionControllerLog) << "Remote data download completed successfully";
             } else {
@@ -1006,6 +1029,41 @@ void DataCollectionController::_sendReplayDataResponse(bool dataAvailable, const
     );
     
     _vehicle->sendMessageOnLinkThreadSafe(sharedLink.get(), msg);
+}
+
+void DataCollectionController::_startPeriodicDataSync()
+{
+    // Don't start if already running
+    if (_periodicSyncTimer.isActive()) {
+        qCDebug(DataCollectionControllerLog) << "Periodic data sync already running";
+        return;
+    }
+    
+    qCDebug(DataCollectionControllerLog) << "Starting periodic data sync (every" << DATA_SYNC_INTERVAL_MS / 1000 << "seconds)";
+    
+    // Set timer to repeat indefinitely
+    _periodicSyncTimer.setSingleShot(false);
+    
+    // Connect timer to sync handler
+    connect(&_periodicSyncTimer, &QTimer::timeout, this, [this]() {
+        if (_isCollecting && !_downloadInProgress) {
+            qCDebug(DataCollectionControllerLog) << "Periodic sync triggered - backing up collected data";
+            _getReplayDataRemotePath();
+        }
+    });
+    
+    // Start timer
+    _periodicSyncTimer.start(DATA_SYNC_INTERVAL_MS);
+}
+
+void DataCollectionController::_stopPeriodicDataSync()
+{
+    qCDebug(DataCollectionControllerLog) << "Stopping periodic data sync";
+    
+    if (_periodicSyncTimer.isActive()) {
+        _periodicSyncTimer.stop();
+    }
+    disconnect(&_periodicSyncTimer, nullptr, this, nullptr);
 }
 
 QString findSessionMetadata(const QString& folderPath, const QString& flightId) {

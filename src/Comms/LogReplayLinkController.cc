@@ -345,8 +345,8 @@ bool LogReplayLinkController::loadFromMetadataFolder(const QString &metadataFold
         return false;
     }
     
-    // 2. Get list of session directories (for now, use first one - later can add UI picker)
-    QStringList sessions = sessionsDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+    // 2. Get list of session directories
+    QStringList sessions = sessionsDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot | QDir::Files);
     if (sessions.isEmpty()) {
         qCWarning(LogReplayLinkControllerLog) << "No sessions found in" << sessionsDir.path();
         return false;
@@ -355,7 +355,24 @@ bool LogReplayLinkController::loadFromMetadataFolder(const QString &metadataFold
     _sessionsMetadata.clear();
 
     for (const auto &session : sessions) {
-        QString metadataPath = sessionsDir.filePath(session + "/session_metadata.json");
+        QFileInfo fileInfo(session);
+        QString flightIdFile = fileInfo.fileName();
+        QString flightId = fileInfo.baseName();
+        
+        // Get flight ID from the run_id text file
+        if (!flightIdFile.endsWith(".txt")) {
+            qCWarning(LogReplayLinkControllerLog) << "Skipping non-txt file in sessions directory:" << flightId;
+            continue;
+        }
+        QFile runIdFile(sessionsDir.filePath(flightIdFile));
+        if (!runIdFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            qCWarning(LogReplayLinkControllerLog) << "Failed to open run ID file:" << runIdFile.fileName();
+            continue;
+        }
+        QString runId = QString::fromUtf8(runIdFile.readAll()).trimmed();
+        runIdFile.close();
+
+        QString metadataPath = sessionsDir.filePath(metadataFolderPath + "/sessions/" + runId + "/session_metadata.json");
         QFile metadataFile(metadataPath);
         if (!metadataFile.open(QIODevice::ReadOnly)) {
             qCWarning(LogReplayLinkControllerLog) << "Failed to open metadata file" <<
@@ -369,11 +386,7 @@ bool LogReplayLinkController::loadFromMetadataFolder(const QString &metadataFold
         }
 
         QJsonObject metadata = doc.object();
-        QString flightId = metadata["flight_id"].toString();
-        if (flightId.isEmpty()) {
-            qCWarning(LogReplayLinkControllerLog) << "No flight_id found in metadata";
-            return false;
-        }
+
         uint32_t dcDurationSecs = static_cast<uint32_t>(metadata["duration_seconds"].toInt());
         QString dcStartTime = metadata["dc_start_time"].toString();
 
@@ -440,7 +453,7 @@ bool LogReplayLinkController::loadFromMetadataFolder(const QString &metadataFold
         }
 
 
-        SessionMetadata sessionMeta { flightId, dcDurationSecs, tlogStartUSecs, hasVideo, hasTlog, tlogPath, videoStreams };
+        SessionMetadata sessionMeta { runId, dcDurationSecs, tlogStartUSecs, hasVideo, hasTlog, tlogPath, videoStreams };
         _sessionsMetadata.append(sessionMeta);
     }
 
