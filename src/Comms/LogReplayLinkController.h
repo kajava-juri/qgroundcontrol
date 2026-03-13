@@ -151,15 +151,26 @@ private:
         bool hasTlog;
         QString tlogFilePath;
         QList<VideoStreamInfo> videoStreams;
+        quint64 timestamp;
 
         QVariantMap toMap() const {
+            QVariantList streams;
+            for (const VideoStreamInfo& stream : videoStreams) {
+                streams.append(QVariantMap{
+                    {"videoPath", stream.videoPath},
+                    {"offsetMs",  stream.offsetMs},
+                    {"durationMs", stream.durationMs}
+                });
+            }
             return {
-                {"flightId", flightId},
-                {"dcDurationSecs", dcDurationSecs},
-                {"tlogDurationSecs", tlogDurationSecs},
-                {"hasVideo", hasVideo},
-                {"hasTlog", hasTlog},
-                {"tlogFilePath", tlogFilePath}
+                {"flightId",        flightId},
+                {"dcDurationSecs",  dcDurationSecs},
+                {"tlogDurationSecs",tlogDurationSecs},
+                {"hasVideo",        hasVideo},
+                {"hasTlog",         hasTlog},
+                {"tlogFilePath",    tlogFilePath},
+                {"videoStreams",     streams},
+                {"timestamp",       timestamp}
             };
         }
     };

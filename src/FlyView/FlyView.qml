@@ -324,6 +324,7 @@ Item {
         border.width: 2
         radius: 4
         z: QGroundControl.zOrderTopMost
+        visible: false
 
         Text {
             anchors.centerIn: parent

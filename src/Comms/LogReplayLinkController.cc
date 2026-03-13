@@ -453,7 +453,7 @@ bool LogReplayLinkController::loadFromMetadataFolder(const QString &metadataFold
         }
 
 
-        SessionMetadata sessionMeta { runId, dcDurationSecs, tlogStartUSecs, hasVideo, hasTlog, tlogPath, videoStreams };
+        SessionMetadata sessionMeta { runId, dcDurationSecs, tlogStartUSecs, hasVideo, hasTlog, tlogPath, videoStreams, tlogStartUSecs };
         _sessionsMetadata.append(sessionMeta);
     }
 

@@ -66,33 +66,41 @@ Rectangle {
                     font.pointSize: ScreenTools.mediumFontPointSize
                     Layout.fillWidth: true
                 }
-                ListView {
+                
+                Item {
                     Layout.fillWidth: true
                     Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 20
-                    clip: true
-                    spacing: ScreenTools.defaultFontPixelHeight / 4
                     
-                    model: controller.sessionMetadata
-                    
-                    delegate: QGCDelayButton {
-                        required property var modelData
-
-                        width: ListView.view.width
-                        height: ScreenTools.defaultFontPixelHeight * 2.5
-                        delay: 1000  // Hold for 1 second to confirm
-                        text: {
-                            var info = qsTr("Flight ID: %1 | Duration: %2s | Video: %3 | Tlog: %4")
-                                        .arg(modelData.flightId)
-                                        .arg(modelData.dcDurationSecs)
-                                        .arg(modelData.hasVideo ? qsTr("Yes") : qsTr("No"))
-                                        .arg(modelData.hasTlog ? qsTr("Yes") : qsTr("No"))
-                            return info
-                        }
-                        enabled: modelData.hasTlog
+                    ListView {
+                        id: sessionListView
+                        anchors.fill: parent
+                        clip: true
+                        spacing: ScreenTools.defaultFontPixelHeight / 4
                         
-                        onActivated: {
-                            if (controller.loadSessionByFlightId(modelData.flightId)) {
-                                close()
+                        model: controller.sessionMetadata
+                        
+                        delegate: QGCDelayButton {
+                            required property var modelData
+
+                            width: sessionListView.width
+                            height: ScreenTools.defaultFontPixelHeight * 2.5
+                            delay: 1000  // Hold for 1 second to confirm
+                            text: {
+                                var streamCount = modelData.videoStreams ? modelData.videoStreams.length : 0
+                                var datetimeStr = modelData.timestamp ? Qt.formatDateTime(new Date(modelData.timestamp / 1000), "yyyy-MM-dd HH:mm:ss") : qsTr("Unknown time")
+                                return qsTr("Flight ID: %1 | Duration: %2s | Streams: %3 | Tlog: %4\n%5")
+                                    .arg(modelData.flightId)
+                                    .arg(modelData.dcDurationSecs)
+                                    .arg(streamCount > 0 ? streamCount + " video(s)" : qsTr("No video"))
+                                    .arg(modelData.hasTlog ? qsTr("Yes") : qsTr("No"))
+                                    .arg(datetimeStr)
+                            }
+                            enabled: modelData.hasTlog
+                            
+                            onActivated: {
+                                if (controller.loadSessionByFlightId(modelData.flightId)) {
+                                    close()
+                                }
                             }
                         }
                     }
@@ -100,7 +108,7 @@ Rectangle {
                     QGCLabel {
                         anchors.centerIn: parent
                         text: qsTr("No sessions found")
-                        visible: ListView.view.count === 0
+                        visible: sessionListView.count === 0
                     }
                 }
             }

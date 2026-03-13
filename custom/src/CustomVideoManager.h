@@ -36,6 +36,8 @@ class QGCApplication;
 class CustomVideoManager : public QObject
 {
     Q_OBJECT
+    Q_PROPERTY(QVariantList videoReplaySegments READ videoReplaySegments NOTIFY videoReplaySegmentsChanged)
+
 
 public:
     explicit CustomVideoManager(QObject* parent = nullptr);
@@ -83,7 +85,13 @@ signals:
     void videoReplaySegmentsChanged();
 
 private:
-
+    enum StopReason {
+        None,
+        UriChange,
+        WidgetReinit,
+        CollectionEnd,
+        CommLost
+    };
     void _setupReceiver(int streamIndex, QQuickItem* widget);
     void _startReceiver(int streamIndex);
     void _stopReceiver(int streamIndex);
@@ -124,6 +132,7 @@ private:
         bool allowAutoRestart = true;
         int restartAttempts = 0;  // For exponential backoff in noisy WiFi
         QMetaObject::Connection restartConnection;  // Connection for deferred restart
+        StopReason pendingStopReason = StopReason::None;  // Reason for pending stop (if any)
     };
 
     // Replay per-stream state

@@ -224,14 +224,21 @@ void MAVLinkProtocol::_logData(LinkInterface *link, const mavlink_message_t &mes
 
     switch (message.msgid) {
     case MAVLINK_MSG_ID_HEARTBEAT: {
+        // NOTE: Auto-start disabled for data collection custom build
+        // Telemetry logging is explicitly started by DataCollectionController::startRecording()
+        // This prevents creating long telemetry logs when data collection starts minutes after app launch
+        #ifndef QGC_CUSTOM_BUILD
         startLogging();
+        #endif
         mavlink_heartbeat_t heartbeat{};
         mavlink_msg_heartbeat_decode(&message, &heartbeat);
         emit vehicleHeartbeatInfo(link, message.sysid, message.compid, heartbeat.autopilot, heartbeat.type);
         break;
     }
     case MAVLINK_MSG_ID_HIGH_LATENCY: {
+        #ifndef QGC_CUSTOM_BUILD
         startLogging();
+        #endif
         mavlink_high_latency_t highLatency{};
         mavlink_msg_high_latency_decode(&message, &highLatency);
         // HIGH_LATENCY does not provide autopilot or type information, generic is our safest bet
@@ -239,7 +246,9 @@ void MAVLinkProtocol::_logData(LinkInterface *link, const mavlink_message_t &mes
         break;
     }
     case MAVLINK_MSG_ID_HIGH_LATENCY2: {
+        #ifndef QGC_CUSTOM_BUILD
         startLogging();
+        #endif
         mavlink_high_latency2_t highLatency2{};
         mavlink_msg_high_latency2_decode(&message, &highLatency2);
         emit vehicleHeartbeatInfo(link, message.sysid, message.compid, highLatency2.autopilot, highLatency2.type);
