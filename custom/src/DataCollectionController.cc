@@ -1059,11 +1059,17 @@ void DataCollectionController::_startPeriodicDataSync()
 void DataCollectionController::_stopPeriodicDataSync()
 {
     qCDebug(DataCollectionControllerLog) << "Stopping periodic data sync";
-    
+
     if (_periodicSyncTimer.isActive()) {
         _periodicSyncTimer.stop();
     }
     disconnect(&_periodicSyncTimer, nullptr, this, nullptr);
+
+    // Trigger one final sync before shutting down the timer
+    if (!_downloadInProgress) {
+        qCDebug(DataCollectionControllerLog) << "Triggering final data sync on periodic sync stop";
+        _getReplayDataRemotePath();
+    }
 }
 
 QString findSessionMetadata(const QString& folderPath, const QString& flightId) {

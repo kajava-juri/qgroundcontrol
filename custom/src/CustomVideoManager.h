@@ -90,7 +90,8 @@ private:
         UriChange,
         WidgetReinit,
         CollectionEnd,
-        CommLost
+        CommLost,
+        ReplayModeEnter
     };
     void _setupReceiver(int streamIndex, QQuickItem* widget);
     void _startReceiver(int streamIndex);

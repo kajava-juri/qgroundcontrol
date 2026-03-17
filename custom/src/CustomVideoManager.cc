@@ -387,31 +387,44 @@ void CustomVideoManager::_setupReceiver(int streamIndex, QQuickItem* widget)
 
     (void) connect(stream.receiver, &VideoReceiver::onStopComplete, this, [this, streamIndex](VideoReceiver::STATUS status) {
         qCDebug(CustomVideoManagerLog) << "Stop complete" << _streams[streamIndex].receiver->name() << _streams[streamIndex].receiver->uri()  << ", status:" << status;
+        StopReason reason = _streams[streamIndex].pendingStopReason;
+        _streams[streamIndex].pendingStopReason = StopReason::None;
         _streams[streamIndex].receiver->setStarted(false);
         if (status == VideoReceiver::STATUS_INVALID_URL) {
             qCDebug(CustomVideoManagerLog) << "Invalid video URL. Not restarting";
             _streams[streamIndex].restartAttempts = 0;  // Reset on invalid URL
-        } else if (!_streams[streamIndex].allowAutoRestart) {
-            qCDebug(CustomVideoManagerLog) << "Auto-restart disabled for stream" << streamIndex;
-            _streams[streamIndex].allowAutoRestart = true;  // Re-enable for next time
-            _streams[streamIndex].restartAttempts = 0;  // Reset counter
-        } else if (_streams[streamIndex].uri.isEmpty()) {
+            return;
+        }
+
+        if(reason == StopReason::CollectionEnd || reason == StopReason::CommLost || reason == StopReason::ReplayModeEnter) {
+            qCDebug(CustomVideoManagerLog) << "Stream stopped intentionally, reason:" << (int)reason << ". Not restarting.";
+            _streams[streamIndex].restartAttempts = 0;  // Reset on intentional stop
+            return;
+        }
+
+        if (_streams[streamIndex].uri.isEmpty()) {
             qCDebug(CustomVideoManagerLog) << "URI is empty, not restarting stream" << streamIndex;
             _streams[streamIndex].restartAttempts = 0;  // Reset counter
-        } else {
-            // Exponential backoff: 2s, 4s, 8s, 16s, max 30s
-            _streams[streamIndex].restartAttempts++;
-            int delayMs = qMin(2000 * (1 << (_streams[streamIndex].restartAttempts - 1)), 30000);
-            qCDebug(CustomVideoManagerLog) << "Scheduling restart for stream" << streamIndex 
-                                            << "attempt" << _streams[streamIndex].restartAttempts
-                                            << "after" << delayMs << "ms";
-            QTimer::singleShot(delayMs, _streams[streamIndex].receiver, [this, streamIndex]() {
-                qCDebug(CustomVideoManagerLog) << "Restarting video receiver" 
-                                                << _streams[streamIndex].receiver->name() 
-                                                << _streams[streamIndex].receiver->uri();
-                _startReceiver(streamIndex);
-            });
+            return;
+        } 
+
+        if (reason == StopReason::UriChange || reason == StopReason::WidgetReinit) {
+            return;
         }
+        
+        // Exponential backoff: 2s, 4s, 8s, 16s, max 30s
+        _streams[streamIndex].restartAttempts++;
+        int delayMs = qMin(2000 * (1 << (_streams[streamIndex].restartAttempts - 1)), 30000);
+        qCDebug(CustomVideoManagerLog) << "Scheduling restart for stream" << streamIndex 
+                                        << "attempt" << _streams[streamIndex].restartAttempts
+                                        << "after" << delayMs << "ms";
+        QTimer::singleShot(delayMs, _streams[streamIndex].receiver, [this, streamIndex]() {
+            qCDebug(CustomVideoManagerLog) << "Restarting video receiver" 
+                                            << _streams[streamIndex].receiver->name() 
+                                            << _streams[streamIndex].receiver->uri();
+            _startReceiver(streamIndex);
+        });
+
     });
 
     // Log when receiver gets timeout
@@ -544,6 +557,7 @@ void CustomVideoManager::setStreamUri(int streamIndex, const QString& uri)
             if (_streams[streamIndex].receiver && _streams[streamIndex].receiver->started()) {
                 qCWarning(CustomVideoManagerLog) << "Stream" << streamIndex << "stopping stale receiver, will auto-restart via onStopComplete";
                 // onStopComplete handler will automatically restart after stop completes
+                _streams[streamIndex].pendingStopReason = StopReason::UriChange;  // Set reason for stop to prevent auto-restart in onStopComplete
                 stopStream(streamIndex);
             } else {
 
@@ -659,7 +673,8 @@ void CustomVideoManager::clearAllStreamInfo()
         QString oldUri = _streams[i].uri;
         
         // Disable auto-restart during cleanup
-        _streams[i].allowAutoRestart = false;
+        // _streams[i].allowAutoRestart = false;
+        _streams[i].pendingStopReason = StopReason::CollectionEnd;
         
         // Stop receiver if running
         if (_streams[i].receiver && _streams[i].receiver->started()) {
@@ -706,6 +721,7 @@ void CustomVideoManager::_setActiveVehicle(Vehicle* vehicle)
         // 3. Stop streams (now safe)
         for (int i = 0; i < STREAM_COUNT; i++) {
             if (_streams[i].receiver && _streams[i].receiver->started()) {
+                _streams[i].pendingStopReason = StopReason::CommLost;  // Set reason to prevent auto-restart
                 _streams[i].receiver->stop();
             }
         }
@@ -762,7 +778,8 @@ bool CustomVideoManager::enterReplayMode(const QString& rgbVideoPath, const QStr
 
     // Stop all live streams - disable auto-restart so they don't fight us
     for (int i = 0; i < STREAM_COUNT; i++) {
-        _streams[i].allowAutoRestart = false;
+        // _streams[i].allowAutoRestart = false;
+        _streams[i].pendingStopReason = StopReason::ReplayModeEnter;
         if (_streams[i].receiver && _streams[i].receiver->started()) {
             _streams[i].receiver->stop();
         }
@@ -1204,8 +1221,7 @@ void CustomVideoManager::exitReplayMode()
         rs.loaded = false;
         rs.videoPath.clear();
 
-        // Re-enable auto-restart for live streams
-        _streams[i].allowAutoRestart = true;
+        _streams[i].pendingStopReason = StopReason::None;
 
         _streams[i].active = false;
         _streams[i].decoding = false;
