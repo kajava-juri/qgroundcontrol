@@ -158,6 +158,8 @@ CLAUDE.md
 
 # Development notes (not part of official docs)
 custom/dev-notes/
+custom/qml/QmlControls/
+custom/src/Comms/
 
 # Pre-commit hooks
 .ruff_cache/

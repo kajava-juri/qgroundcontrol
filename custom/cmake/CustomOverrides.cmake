@@ -7,6 +7,8 @@
 # Application Branding
 # ----------------------------------------------------------------------------
 set(QGC_APP_NAME "Custom-QGroundControl" CACHE STRING "App Name" FORCE)
+set(QGC_PACKAGE_NAME "com.custom.qgroundcontrol" CACHE STRING "Package identifier" FORCE)
+set(QGC_ANDROID_PACKAGE_NAME "com.custom.qgroundcontrol" CACHE STRING "Android package identifier" FORCE)
 
 # ----------------------------------------------------------------------------
 # Custom Icons and Graphics
@@ -36,10 +38,10 @@ endif()
 # Feature Set Customization
 # ----------------------------------------------------------------------------
 
-# Build a single flight stack by disabling APM support
-set(QGC_DISABLE_APM_MAVLINK ON CACHE BOOL "Disable APM Dialect" FORCE)
-set(QGC_DISABLE_APM_PLUGIN ON CACHE BOOL "Disable APM Plugin" FORCE)
-set(QGC_DISABLE_APM_PLUGIN_FACTORY ON CACHE BOOL "Disable APM Plugin Factory" FORCE)
+# Enable both PX4 and ArduPilot support with custom plugin factories
+set(QGC_DISABLE_APM_MAVLINK OFF CACHE BOOL "Enable APM Dialect" FORCE)
+set(QGC_DISABLE_APM_PLUGIN OFF CACHE BOOL "Enable APM Plugin" FORCE)
+set(QGC_DISABLE_APM_PLUGIN_FACTORY ON CACHE BOOL "Disable APM Plugin Factory (using custom)" FORCE)
 
 # Implement custom PX4 plugin factory
-set(QGC_DISABLE_PX4_PLUGIN_FACTORY ON CACHE BOOL "Disable PX4 Plugin Factory" FORCE)
+set(QGC_DISABLE_PX4_PLUGIN_FACTORY ON CACHE BOOL "Disable PX4 Plugin Factory (using custom)" FORCE)
