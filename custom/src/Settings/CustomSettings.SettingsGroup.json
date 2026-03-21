@@ -1,0 +1,88 @@
+{
+    "version":      1,
+    "fileType":  "FactMetaData",
+    "QGC.MetaData.Facts":
+    [
+        {
+            "name":      "httpUrl",
+            "shortDesc": "Data collection HTTP Url",
+            "longDesc":  "HTTP url address and port to communicate with the data collection script. Example: http://0.0.0.0:5000",
+            "type":             "string",
+            "default":     "http://0.0.0.0:5000"
+        },
+        {
+            "name":      "folderName",
+            "shortDesc": "Data folder name",
+            "longDesc":  "Name of folder where collected data will be stored",
+            "type":      "string",
+            "default":   "data"
+        },
+        {
+            "name":      "timeout",
+            "shortDesc": "Collection timeout",
+            "longDesc":  "Timeout in seconds for data collection operations",
+            "type":      "uint32",
+            "default":   30,
+            "min":       1,
+            "max":       300
+        },
+        {
+            "name":      "noTimeout",
+            "shortDesc": "No timeout (run indefinitely)",
+            "longDesc":  "When enabled, data collection runs indefinitely without timeout",
+            "type":      "bool",
+            "default":   false
+        },
+        {
+            "name":      "enableVoxlLogging",
+            "shortDesc": "Enable VOXL logging",
+            "longDesc":  "Enable logging from VOXL system",
+            "type":      "bool",
+            "default":   false
+        },
+        {
+            "name":      "enableRtkLogging",
+            "shortDesc": "Enable RTK logging",
+            "longDesc":  "Enable logging from RTK GPS system",
+            "type":      "bool",
+            "default":   false
+        },
+        {
+            "name":      "enableQgcStreaming",
+            "shortDesc": "Enable QGC streaming",
+            "longDesc":  "Enable streaming to QGroundControl",
+            "type":      "bool",
+            "default":   true
+        },
+        {
+            "name":      "qgcIp",
+            "shortDesc": "QGC IP address",
+            "longDesc":  "IP address for QGroundControl streaming",
+            "type":      "string",
+            "default":   "127.0.0.1"
+        },
+        {
+            "name":      "qgcPort",
+            "shortDesc": "QGC port",
+            "longDesc":  "Port number for QGroundControl streaming",
+            "type":      "uint32",
+            "default":   14550,
+            "min":       1024,
+            "max":       65535
+        },
+        {
+            "name":      "useHardwareEncoding",
+            "shortDesc": "Use hardware encoding",
+            "longDesc":  "Enable hardware-accelerated video encoding",
+            "type":      "bool",
+            "default":   false
+        },
+        {
+            "name":      "remoteUserName",
+            "shortDesc": "Remote User Name",
+            "longDesc":  "Username for remote server access during data collection replay",
+            "type":      "string",
+            "default":   "drone"
+        }
+    ]
+}
