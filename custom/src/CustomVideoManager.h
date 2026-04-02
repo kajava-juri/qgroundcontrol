@@ -40,6 +40,18 @@ class CustomVideoManager : public QObject
 
 
 public:
+    struct FrameMetadata {
+        quint64 frameIndex = 0;
+        quint64 timestampNs = 0;
+    };
+
+    struct VideoStreamMetadata {
+        QString videoPath;
+        qint64 offsetMs = 0;  // Offset from tlog start (can be negative if video starts after tlog)
+        bool isDirectory = false;
+        QList<FrameMetadata> frameMetadata;
+    };
+
     explicit CustomVideoManager(QObject* parent = nullptr);
     ~CustomVideoManager() override;
 
@@ -101,16 +113,18 @@ private:
     void _setActiveVehicle(Vehicle* vehicle);
     void _communicationLostChanged(bool communicationLost);
     void _checkDelayedVideos();  // Check if any delayed videos are ready to start
-    bool _openReplayStream(int streamIndex, const QString& videoPath, QQuickItem* widget);
+    bool _openReplayStream(int streamIndex, const VideoStreamMetadata& streamMeta, QQuickItem* widget);
     static gboolean _onBusMessage(GstBus* bus, GstMessage* message, gpointer user_data);
+    static void _onReplayAppSrcNeedData(GstElement* appsrc, guint length, gpointer user_data);
+    static gboolean _onReplayAppSrcSeekData(GstElement* appsrc, guint64 offset, gpointer user_data);
     //void _updateVideoReplaySegments();
+    GstElement* _getVideoFilePipeline(const QString& videoPath, void* sink, int streamIndex);
+    GstElement* _getVideoFramesPipeline(const VideoStreamMetadata& streamMeta, void* sink, int streamIndex);
+    QString _resolveFramePath(const QString& directoryPath, quint64 frameIndex) const;
 
 public:
-    struct VideoStreamMetadata {
-        QString videoPath;
-        qint64 offsetMs = 0;  // Offset from tlog start (can be negative if video starts after tlog)
-    };
 
+    bool enterReplayMode(const VideoStreamMetadata& rgbStream, const VideoStreamMetadata& thermalStream);
     Q_INVOKABLE bool enterReplayMode(const QString& rgbVideoPath, const QString& thermalVideoPath, 
                                       qint64 rgbOffsetMs = 0, qint64 thermalOffsetMs = 0);
     Q_INVOKABLE void exitReplayMode();
@@ -142,6 +156,12 @@ private:
         void* sink = nullptr;             // GstGLQt6 sink (same widget as live)
         bool loaded = false;
         QString videoPath;
+        bool isFrameSequence = false;
+        VideoStreamMetadata frameStreamMeta;
+        int nextFrameMetadataIndex = 0;
+        quint64 baseFrameTimestampNs = 0;
+        qint64 defaultFrameDurationNs = 33333333;  // ~30fps fallback for last frame
+        bool frameEosSent = false;
         qint64 offsetMs = 0;              // Offset from tlog start (negative if video starts after tlog)
         bool readyToPlay = false;         // False if waiting for tlog to catch up to video start
         qint64 lastSeekTimeMs = -1000;    // Last video time we seeked to (ms) - initialized to force first seek

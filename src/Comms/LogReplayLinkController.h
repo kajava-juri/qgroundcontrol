@@ -79,10 +79,17 @@ public:
     // Load a specific session by flight ID (must call loadFromMetadataFolder first)
     Q_INVOKABLE bool loadSessionByFlightId(const QString &flightId);
     
+    struct FrameMetadata {
+        quint64 frameIndex = 0;
+        quint64 timestampNs = 0;  // Nanosecond timestamp from CSV
+    };
+
     struct VideoStreamInfo {
         QString videoPath;
-        qint64 offsetMs = 0;  // Milliseconds offset from tlog start
-        qint64 durationMs = 0; // Duration of the video in milliseconds
+        qint64 offsetMs = 0;      // Milliseconds offset from tlog start
+        qint64 durationMs = 0;    // Duration of the video in milliseconds
+        bool isDirectory = false;  // True if videoPath points to frame directory, false if video file
+        QList<FrameMetadata> frameMetadata;  // Populated if isDirectory = true
     };
     
     VideoStreamInfo rgbVideoInfo() const { return _rgbVideoInfo; }
@@ -120,6 +127,7 @@ private:
     static QString _secondsToHMS(uint32_t seconds);
     QString _extractFlightId(const QString &filename);
     QString _findTlogByFlightId(const QString &flightId);
+    VideoStreamInfo _processVideoPath(const QString &videoPath, quint64 tlogStartUSecs);
     void _requestReplayDataCheck(const QString &flightId);
     void _handleStatusTextMessage(const mavlink_message_t &message);
     void _setReplayDataStatus(ReplayDataStatus status, const QString &message = QString());
@@ -159,7 +167,8 @@ private:
                 streams.append(QVariantMap{
                     {"videoPath", stream.videoPath},
                     {"offsetMs",  stream.offsetMs},
-                    {"durationMs", stream.durationMs}
+                    {"durationMs", stream.durationMs},
+                    {"isDirectory", stream.isDirectory}
                 });
             }
             return {

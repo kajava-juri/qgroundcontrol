@@ -20,6 +20,9 @@
 #include <gst/gst.h>
 #include <QColor>
 #include <QDebug>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
 
 QGC_LOGGING_CATEGORY(CustomVideoManagerLog, "CustomVideoManager")
 
@@ -764,17 +767,32 @@ void CustomVideoManager::_communicationLostChanged(bool communicationLost)
     }
 }
 
-bool CustomVideoManager::enterReplayMode(const QString& rgbVideoPath, const QString& thermalVideoPath, 
+bool CustomVideoManager::enterReplayMode(const QString& rgbVideoPath, const QString& thermalVideoPath,
                                           qint64 rgbOffsetMs, qint64 thermalOffsetMs)
+{
+    VideoStreamMetadata rgbStream;
+    rgbStream.videoPath = rgbVideoPath;
+    rgbStream.offsetMs = rgbOffsetMs;
+
+    VideoStreamMetadata thermalStream;
+    thermalStream.videoPath = thermalVideoPath;
+    thermalStream.offsetMs = thermalOffsetMs;
+
+    return enterReplayMode(rgbStream, thermalStream);
+}
+
+bool CustomVideoManager::enterReplayMode(const VideoStreamMetadata& rgbStream, const VideoStreamMetadata& thermalStream)
 {
     if (_replay.active) {
         qCWarning(CustomVideoManagerLog) << "Already in replay mode, exiting first";
         exitReplayMode();
     }
 
+    const std::array<VideoStreamMetadata, STREAM_COUNT> streamMetas = {rgbStream, thermalStream};
+
     qCDebug(CustomVideoManagerLog) << "Entering replay mode";
-    qCDebug(CustomVideoManagerLog) << "  RGB:" << rgbVideoPath << "offset:" << rgbOffsetMs << "ms";
-    qCDebug(CustomVideoManagerLog) << "  Thermal:" << thermalVideoPath << "offset:" << thermalOffsetMs << "ms";
+    qCDebug(CustomVideoManagerLog) << "  RGB:" << streamMetas[STREAM_RGB].videoPath << "offset:" << streamMetas[STREAM_RGB].offsetMs << "ms";
+    qCDebug(CustomVideoManagerLog) << "  Thermal:" << streamMetas[STREAM_THERMAL].videoPath << "offset:" << streamMetas[STREAM_THERMAL].offsetMs << "ms";
 
     // Stop all live streams - disable auto-restart so they don't fight us
     for (int i = 0; i < STREAM_COUNT; i++) {
@@ -787,17 +805,14 @@ bool CustomVideoManager::enterReplayMode(const QString& rgbVideoPath, const QStr
 
     _replay.playbackSpeed  = 1.0;
 
-    QStringList paths = { rgbVideoPath, thermalVideoPath };
-    QList<qint64> offsets = { rgbOffsetMs, thermalOffsetMs };
-
     for (int i = 0; i < STREAM_COUNT; i++) {
         // Skip if no video path provided
-        if (paths[i].isEmpty()) {
+        if (streamMetas[i].videoPath.isEmpty()) {
             qCDebug(CustomVideoManagerLog) << "Skipping stream" << i << "- no video path";
             continue;
         }
         
-        qCDebug(CustomVideoManagerLog) << "Setting up widget replay stream" << StreamNames[i] << "with video path:" << paths[i];
+        qCDebug(CustomVideoManagerLog) << "Setting up widget replay stream" << StreamNames[i] << "with video path:" << streamMetas[i].videoPath;
         QQuickItem* widget = _mainWindow->findChild<QQuickItem*>(
             QString::fromStdString(StreamNames[i])
         );
@@ -806,18 +821,18 @@ bool CustomVideoManager::enterReplayMode(const QString& rgbVideoPath, const QStr
             continue;
         }
 
-        if (!_openReplayStream(i, paths[i], widget)) {
+        if (!_openReplayStream(i, streamMetas[i], widget)) {
             qCWarning(CustomVideoManagerLog) << "Failed to open replay stream" << i << "- skipping";
             continue;
         }
         
         // Store offset
-        _replay.streams[i].offsetMs = offsets[i];
+        _replay.streams[i].offsetMs = streamMetas[i].offsetMs;
         
         // If offset is negative (video starts after tlog), mark as not ready
-        if (offsets[i] < 0) {
+        if (streamMetas[i].offsetMs < 0) {
             _replay.streams[i].readyToPlay = false;
-            qCWarning(CustomVideoManagerLog) << "Stream" << i << "starts" << (-offsets[i]) 
+            qCWarning(CustomVideoManagerLog) << "Stream" << i << "starts" << (-streamMetas[i].offsetMs)
                                               << "ms after tlog - will delay playback";
         } else {
             _replay.streams[i].readyToPlay = true;
@@ -853,7 +868,7 @@ bool CustomVideoManager::enterReplayMode(const QString& rgbVideoPath, const QStr
             qCDebug(CustomVideoManagerLog) << "Preparing replay stream" << i;
             
             // Seek to offset position (handles negative offsets by staying at 0)
-            qint64 initialPosMs = qMax(static_cast<qint64>(0), offsets[i]);
+            qint64 initialPosMs = qMax(static_cast<qint64>(0), _replay.streams[i].offsetMs);
             gst_element_set_state(_replay.streams[i].pipeline, GST_STATE_PAUSED);
             
             if (initialPosMs > 0) {
@@ -864,7 +879,7 @@ bool CustomVideoManager::enterReplayMode(const QString& rgbVideoPath, const QStr
             }
             
             // Keep PAUSED - will start playing when user presses play button
-            qCDebug(CustomVideoManagerLog) << "Stream" << i << "ready at" << offsets[i] << "ms offset, waiting for playback start";
+            qCDebug(CustomVideoManagerLog) << "Stream" << i << "ready at" << _replay.streams[i].offsetMs << "ms offset, waiting for playback start";
         }
     }
 
@@ -881,11 +896,245 @@ bool CustomVideoManager::enterReplayMode(const QString& rgbVideoPath, const QStr
     return true;
 }
 
+GstElement* CustomVideoManager::_getVideoFilePipeline(const QString& videoPath, void* sink, int streamIndex)
+{
+    GstElement* pipeline = gst_element_factory_make("playbin", nullptr);
+    if (!pipeline) {
+        qCCritical(CustomVideoManagerLog) << "Failed to create playbin for stream" << streamIndex;
+        return nullptr;
+    }
+
+    // file:// URI - must be absolute path
+    QString uri = "file://" + videoPath;
+    g_object_set(pipeline, "uri", uri.toUtf8().constData(), nullptr);
+
+    // Point playbin at our existing GL sink
+    // sink here is a GstElement* wrapped in void* by QGC's plugin API
+    g_object_set(pipeline, "video-sink", static_cast<GstElement*>(sink), nullptr);
+
+    // Suppress audio (no audio in drone video files)
+    GstElement* fakesink = gst_element_factory_make("fakesink", nullptr);
+    if (fakesink) {
+        g_object_set(pipeline, "audio-sink", fakesink, nullptr);
+    }
+
+    return pipeline;
+}
+
+GstElement* CustomVideoManager::_getVideoFramesPipeline(const VideoStreamMetadata& streamMeta, void* sink, int streamIndex)
+{
+    GstElement* pipeline = gst_pipeline_new(nullptr);
+    GstElement* src = gst_element_factory_make("appsrc", nullptr);
+    GstElement* jpegDec = gst_element_factory_make("jpegdec", nullptr);
+    GstElement* videoConvert = gst_element_factory_make("videoconvert", nullptr);
+    GstElement* queue = gst_element_factory_make("queue", nullptr);
+    GstElement* videoSink = static_cast<GstElement*>(sink);
+
+    if (!pipeline || !src || !jpegDec || !videoConvert || !queue || !videoSink) {
+        qCCritical(CustomVideoManagerLog) << "Failed to create frame replay pipeline elements for stream" << streamIndex;
+        if (pipeline) {
+            gst_object_unref(pipeline);
+        }
+        return nullptr;
+    }
+
+    GstCaps* caps = gst_caps_new_simple("image/jpeg", nullptr);
+
+    qint64 streamDurationNs = 0;
+    if (streamMeta.frameMetadata.size() > 1) {
+        const quint64 firstTsNs = streamMeta.frameMetadata.first().timestampNs;
+        const quint64 lastTsNs = streamMeta.frameMetadata.last().timestampNs;
+        if (lastTsNs > firstTsNs) {
+            streamDurationNs = static_cast<qint64>(lastTsNs - firstTsNs);
+        }
+    }
+
+    g_object_set(src,
+                 "caps", caps,
+                 "format", GST_FORMAT_TIME,
+                 "is-live", FALSE,
+                 "do-timestamp", FALSE,
+                 // 1 == seekable appsrc stream
+                 "stream-type", 1,
+                 "size", static_cast<gint64>(streamDurationNs),
+                 "duration", static_cast<gint64>(streamDurationNs),
+                 "block", TRUE,
+                 nullptr);
+    gst_caps_unref(caps);
+
+    (void) g_signal_connect(src, "need-data", G_CALLBACK(_onReplayAppSrcNeedData),
+                            reinterpret_cast<gpointer>(static_cast<intptr_t>(streamIndex)));
+    (void) g_signal_connect(src, "seek-data", G_CALLBACK(_onReplayAppSrcSeekData),
+                            reinterpret_cast<gpointer>(static_cast<intptr_t>(streamIndex)));
+
+    gst_bin_add_many(GST_BIN(pipeline), src, jpegDec, videoConvert, queue, videoSink, nullptr);
+    if (!gst_element_link_many(src, jpegDec, videoConvert, queue, videoSink, nullptr)) {
+        qCCritical(CustomVideoManagerLog) << "Failed to link frame replay pipeline for stream" << streamIndex;
+        gst_object_unref(pipeline);
+        return nullptr;
+    }
+
+    return pipeline;
+}
+
+QString CustomVideoManager::_resolveFramePath(const QString& directoryPath, quint64 frameIndex) const
+{
+    const QStringList candidates = {
+        QDir(directoryPath).filePath(QStringLiteral("%1.jpg").arg(frameIndex, 5, 10, QLatin1Char('0'))),
+        QDir(directoryPath).filePath(QStringLiteral("%1.jpg").arg(frameIndex, 4, 10, QLatin1Char('0'))),
+        QDir(directoryPath).filePath(QStringLiteral("%1.jpg").arg(frameIndex, 6, 10, QLatin1Char('0'))),
+        QDir(directoryPath).filePath(QStringLiteral("%1.jpg").arg(frameIndex)),
+        QDir(directoryPath).filePath(QStringLiteral("frame_%1.jpg").arg(frameIndex, 5, 10, QLatin1Char('0'))),
+        QDir(directoryPath).filePath(QStringLiteral("frame_%1.jpg").arg(frameIndex, 4, 10, QLatin1Char('0'))),
+        QDir(directoryPath).filePath(QStringLiteral("frame_%1.jpg").arg(frameIndex, 6, 10, QLatin1Char('0'))),
+        QDir(directoryPath).filePath(QStringLiteral("frame_%1.jpg").arg(frameIndex))
+    };
+
+    for (const QString& path : candidates) {
+        if (QFileInfo::exists(path)) {
+            return path;
+        }
+    }
+
+    return candidates.first();
+}
+
+void CustomVideoManager::_onReplayAppSrcNeedData(GstElement* appsrc, guint length, gpointer user_data)
+{
+    Q_UNUSED(length)
+
+    const int streamIndex = static_cast<int>(reinterpret_cast<intptr_t>(user_data));
+    CustomPlugin* plugin = qobject_cast<CustomPlugin*>(QGCCorePlugin::instance());
+    if (!plugin || !plugin->customVideoManager()) {
+        return;
+    }
+
+    CustomVideoManager* manager = plugin->customVideoManager();
+    if (!manager || streamIndex < 0 || streamIndex >= STREAM_COUNT) {
+        return;
+    }
+
+    ReplayStreamInfo& rs = manager->_replay.streams[streamIndex];
+    if (!rs.isFrameSequence || rs.frameEosSent) {
+        return;
+    }
+
+    constexpr int maxFramesPerNeedData = 4;
+    int pushedFrames = 0;
+
+    while (pushedFrames < maxFramesPerNeedData
+           && rs.nextFrameMetadataIndex < rs.frameStreamMeta.frameMetadata.size()) {
+        const FrameMetadata& frameMeta = rs.frameStreamMeta.frameMetadata[rs.nextFrameMetadataIndex];
+        const QString framePath = manager->_resolveFramePath(rs.videoPath, frameMeta.frameIndex);
+
+        QFile frameFile(framePath);
+        if (!frameFile.open(QIODevice::ReadOnly)) {
+            qCWarning(CustomVideoManagerLog) << "Failed to open frame file:" << framePath;
+            rs.nextFrameMetadataIndex++;
+            continue;
+        }
+
+        const QByteArray jpegData = frameFile.readAll();
+        if (jpegData.isEmpty()) {
+            qCWarning(CustomVideoManagerLog) << "Empty frame file:" << framePath;
+            rs.nextFrameMetadataIndex++;
+            continue;
+        }
+
+        GstBuffer* buffer = gst_buffer_new_allocate(nullptr, static_cast<gsize>(jpegData.size()), nullptr);
+        if (!buffer) {
+            qCWarning(CustomVideoManagerLog) << "Failed to allocate GstBuffer for frame:" << framePath;
+            rs.nextFrameMetadataIndex++;
+            continue;
+        }
+
+        (void) gst_buffer_fill(buffer, 0, jpegData.constData(), static_cast<gsize>(jpegData.size()));
+
+        const quint64 relativePtsNs = frameMeta.timestampNs - rs.baseFrameTimestampNs;
+        GST_BUFFER_PTS(buffer) = static_cast<GstClockTime>(relativePtsNs);
+        GST_BUFFER_DTS(buffer) = static_cast<GstClockTime>(relativePtsNs);
+
+        qint64 durationNs = rs.defaultFrameDurationNs;
+        if (rs.nextFrameMetadataIndex + 1 < rs.frameStreamMeta.frameMetadata.size()) {
+            const quint64 nextTsNs = rs.frameStreamMeta.frameMetadata[rs.nextFrameMetadataIndex + 1].timestampNs;
+            if (nextTsNs > frameMeta.timestampNs) {
+                durationNs = static_cast<qint64>(nextTsNs - frameMeta.timestampNs);
+            }
+        }
+        GST_BUFFER_DURATION(buffer) = static_cast<GstClockTime>(qMax<qint64>(1, durationNs));
+
+        GstFlowReturn flowRet = GST_FLOW_ERROR;
+        g_signal_emit_by_name(appsrc, "push-buffer", buffer, &flowRet);
+        if (flowRet != GST_FLOW_OK) {
+            qCWarning(CustomVideoManagerLog) << "Failed to push frame buffer for stream" << streamIndex
+                                             << "flow:" << flowRet;
+            gst_buffer_unref(buffer);
+            return;
+        }
+
+        rs.nextFrameMetadataIndex++;
+        pushedFrames++;
+    }
+
+    if (rs.nextFrameMetadataIndex >= rs.frameStreamMeta.frameMetadata.size() && !rs.frameEosSent) {
+        rs.frameEosSent = true;
+        GstFlowReturn eosRet = GST_FLOW_ERROR;
+        g_signal_emit_by_name(appsrc, "end-of-stream", &eosRet);
+    }
+}
+
+gboolean CustomVideoManager::_onReplayAppSrcSeekData(GstElement* appsrc, guint64 offset, gpointer user_data)
+{
+    Q_UNUSED(appsrc)
+
+    const int streamIndex = static_cast<int>(reinterpret_cast<intptr_t>(user_data));
+    CustomPlugin* plugin = qobject_cast<CustomPlugin*>(QGCCorePlugin::instance());
+    if (!plugin || !plugin->customVideoManager()) {
+        return FALSE;
+    }
+
+    CustomVideoManager* manager = plugin->customVideoManager();
+    if (!manager || streamIndex < 0 || streamIndex >= STREAM_COUNT) {
+        return FALSE;
+    }
+
+    ReplayStreamInfo& rs = manager->_replay.streams[streamIndex];
+    if (!rs.isFrameSequence || rs.frameStreamMeta.frameMetadata.isEmpty()) {
+        return FALSE;
+    }
+
+    // appsrc seek-data offset is provided in stream format units (nanoseconds here).
+    const quint64 targetRelativeNs = static_cast<quint64>(offset);
+    int newIndex = 0;
+    for (int i = 0; i < rs.frameStreamMeta.frameMetadata.size(); i++) {
+        const quint64 frameRelativeNs = rs.frameStreamMeta.frameMetadata[i].timestampNs - rs.baseFrameTimestampNs;
+        if (frameRelativeNs >= targetRelativeNs) {
+            newIndex = i;
+            break;
+        }
+        newIndex = i;
+    }
+
+    rs.nextFrameMetadataIndex = newIndex;
+    rs.frameEosSent = false;
+
+    qCDebug(CustomVideoManagerLog) << "Appsrc seek-data stream" << streamIndex
+                                   << "offset(ns):" << offset
+                                   << "mapped frame index:" << newIndex;
+
+    return TRUE;
+}
+
 bool CustomVideoManager::_openReplayStream(int streamIndex,
-                                            const QString& videoPath,
+                                            const VideoStreamMetadata& streamMeta,
                                             QQuickItem* widget)
 {
     ReplayStreamInfo& rs = _replay.streams[streamIndex];
+    rs.isFrameSequence = false;
+    rs.frameStreamMeta = VideoStreamMetadata();
+    rs.nextFrameMetadataIndex = 0;
+    rs.baseFrameTimestampNs = 0;
+    rs.frameEosSent = false;
 
     // Create a new sink for this widget (on render thread ideally, but
     // createVideoSink should handle this - same pattern as reinitializeWidgets)
@@ -906,29 +1155,38 @@ bool CustomVideoManager::_openReplayStream(int streamIndex,
 
     rs.sink = sink;
 
-    // Build playbin pipeline
-    GstElement* pipeline = gst_element_factory_make("playbin", nullptr);
-    if (!pipeline) {
-        qCCritical(CustomVideoManagerLog) << "Failed to create playbin for stream" << streamIndex;
+    // Build pipeline based on source type (video file vs frames directory)
+    const bool isDirectory = streamMeta.isDirectory || QFileInfo(streamMeta.videoPath).isDir();
+    if (isDirectory && streamMeta.frameMetadata.isEmpty()) {
+        qCWarning(CustomVideoManagerLog) << "Frame sequence stream has no metadata, cannot build timestamped appsrc pipeline:" << streamMeta.videoPath;
         QGCCorePlugin::instance()->releaseVideoSink(sink);
         rs.sink = nullptr;
         delete tempReceiver;
         return false;
     }
 
-    // file:// URI - must be absolute path
-    QString uri = "file://" + videoPath;
-    g_object_set(pipeline, "uri", uri.toUtf8().constData(), nullptr);
-
-    // Point playbin at our existing GL sink
-    // sink here is a GstElement* wrapped in void* by QGC's plugin API
-    g_object_set(pipeline, "video-sink", static_cast<GstElement*>(sink), nullptr);
-
-    // Suppress audio (no audio in drone video files)
-    GstElement* fakesink = gst_element_factory_make("fakesink", nullptr);
-    if (fakesink) {
-        g_object_set(pipeline, "audio-sink", fakesink, nullptr);
+    if (isDirectory) {
+        rs.isFrameSequence = true;
+        rs.frameStreamMeta = streamMeta;
+        rs.baseFrameTimestampNs = streamMeta.frameMetadata.first().timestampNs;
     }
+
+    // Set path early so appsrc callback can resolve frame files during preroll.
+    rs.videoPath = streamMeta.videoPath;
+
+    GstElement* pipeline = isDirectory
+        ? _getVideoFramesPipeline(streamMeta, sink, streamIndex)
+        : _getVideoFilePipeline(streamMeta.videoPath, sink, streamIndex);
+    if (!pipeline) {
+        qCCritical(CustomVideoManagerLog) << "Failed to build replay pipeline for stream" << streamIndex;
+        QGCCorePlugin::instance()->releaseVideoSink(sink);
+        rs.sink = nullptr;
+        delete tempReceiver;
+        return false;
+    }
+
+    // Set pipeline early so bus callbacks can safely reference it during preroll.
+    rs.pipeline = pipeline;
 
     // Watch bus for errors and EOS
     GstBus* bus = gst_element_get_bus(pipeline);
@@ -960,19 +1218,24 @@ bool CustomVideoManager::_openReplayStream(int streamIndex,
     gint64 duration = GST_CLOCK_TIME_NONE;
     gst_element_query_duration(pipeline, GST_FORMAT_TIME, &duration);
     qint64 durationMs = (duration != GST_CLOCK_TIME_NONE) ? (duration / GST_MSECOND) : -1;
+    if (isDirectory && streamMeta.frameMetadata.size() > 1) {
+        const quint64 firstTs = streamMeta.frameMetadata.first().timestampNs;
+        const quint64 lastTs = streamMeta.frameMetadata.last().timestampNs;
+        if (lastTs > firstTs) {
+            durationMs = static_cast<qint64>((lastTs - firstTs) / 1000000ULL);
+        }
+    }
     
     qCDebug(CustomVideoManagerLog) << "Stream" << streamIndex << "duration:" 
                                      << durationMs << "ms (" << duration << "ns)";
 
     rs.durationMs = durationMs;
-    rs.pipeline = pipeline;
-    rs.videoPath = videoPath;
     rs.loaded = true;
 
     emit videoReplaySegmentsChanged();  // Notify QML that segments have changed
 
     qCWarning(CustomVideoManagerLog) << "Replay stream" << streamIndex
-                                      << "opened:" << videoPath;
+                                      << "opened:" << streamMeta.videoPath;
     return true;
 }
 
@@ -989,7 +1252,9 @@ gboolean CustomVideoManager::_onBusMessage(GstBus* bus, GstMessage* message, gpo
     CustomVideoManager* manager = plugin->customVideoManager();
 
     if (!manager || !manager->_replay.streams[streamIndex].pipeline) {
-        qCCritical(CustomVideoManagerLog) << "Failed to get pipeline for replay stream" << streamIndex;   
+        // During replay startup/teardown callbacks can arrive before stream state is fully wired.
+        qCDebug(CustomVideoManagerLog) << "Replay stream" << streamIndex << "pipeline not ready yet";
+        return TRUE;
     }
     GstElement* pipeline = manager->_replay.streams[streamIndex].pipeline;
     
@@ -1125,7 +1390,7 @@ void CustomVideoManager::seekToPosition(quint32 tlogTimeSecs)
         }
         
         rs.lastSeekTimeMs = videoTimeMs;
-        
+
         gboolean seekResult = gst_element_seek_simple(
             rs.pipeline, 
             GST_FORMAT_TIME,
@@ -1220,6 +1485,11 @@ void CustomVideoManager::exitReplayMode()
         
         rs.loaded = false;
         rs.videoPath.clear();
+        rs.isFrameSequence = false;
+        rs.frameStreamMeta = VideoStreamMetadata();
+        rs.nextFrameMetadataIndex = 0;
+        rs.baseFrameTimestampNs = 0;
+        rs.frameEosSent = false;
 
         _streams[i].pendingStopReason = StopReason::None;
 

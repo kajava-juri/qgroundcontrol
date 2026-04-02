@@ -27,6 +27,7 @@
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 #include <QtCore/QtEndian>
+#include <QtCore/QTextStream>
 
 QGC_LOGGING_CATEGORY(LogReplayLinkControllerLog, "Comms.LogReplayLinkController")
 
@@ -316,6 +317,94 @@ QString LogReplayLinkController::_extractFlightId(const QString &filename)
     return QString();
 }
 
+LogReplayLinkController::VideoStreamInfo LogReplayLinkController::_processVideoPath(const QString &videoPath, quint64 tlogStartUSecs)
+{
+    VideoStreamInfo streamInfo;
+    streamInfo.videoPath = videoPath;
+    streamInfo.offsetMs = 0;
+    streamInfo.durationMs = 0;
+    streamInfo.isDirectory = false;
+
+    QFileInfo pathInfo(videoPath);
+    
+    // Check if path is a directory (frame-based video)
+    if (pathInfo.isDir()) {
+        qCDebug(LogReplayLinkControllerLog) << "Video path is a directory (frame-based):" << videoPath;
+        streamInfo.isDirectory = true;
+        
+        // Read metadata.csv from the directory
+        QString csvPath = pathInfo.filePath() + "/metadata.csv";
+        QFile csvFile(csvPath);
+        
+        if (!csvFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            qCWarning(LogReplayLinkControllerLog) << "Failed to open metadata.csv at:" << csvPath;
+            return streamInfo;
+        }
+        
+        QTextStream in(&csvFile);
+        QString headerLine = in.readLine();  // Skip header line
+        
+        if (headerLine.isEmpty()) {
+            qCWarning(LogReplayLinkControllerLog) << "metadata.csv is empty:" << csvPath;
+            csvFile.close();
+            return streamInfo;
+        }
+        
+        qCDebug(LogReplayLinkControllerLog) << "CSV header:" << headerLine;
+        
+        bool firstFrameSet = false;
+        while (!in.atEnd()) {
+            const QString line = in.readLine();
+            if (line.isEmpty()) {
+                continue;
+            }
+
+            const QStringList parts = line.split(',');
+            if (parts.size() < 2) {
+                continue;
+            }
+
+            bool frameIndexOk = false;
+            const quint64 frameIndex = parts[0].trimmed().toULongLong(&frameIndexOk);
+
+            bool timestampOk = false;
+            const quint64 frameTimestampNs = parts[1].trimmed().toULongLong(&timestampOk);
+
+            if (!frameIndexOk || !timestampOk) {
+                qCWarning(LogReplayLinkControllerLog) << "Failed to parse frame metadata from CSV line:" << line;
+                continue;
+            }
+
+            LogReplayLinkController::FrameMetadata frameMeta;
+            frameMeta.frameIndex = frameIndex;
+            frameMeta.timestampNs = frameTimestampNs;
+            streamInfo.frameMetadata.append(frameMeta);
+
+            if (!firstFrameSet) {
+                firstFrameSet = true;
+
+                // Calculate offset using first frame's timestamp
+                if (tlogStartUSecs > 0) {
+                    const quint64 frameStartUSecs = frameTimestampNs / 1000;  // Convert ns to us
+                    streamInfo.offsetMs = static_cast<qint64>((frameStartUSecs - tlogStartUSecs) / 1000);
+                }
+
+                qCDebug(LogReplayLinkControllerLog) << "Frame-based video offset:" << streamInfo.offsetMs << "ms"
+                                                    << "(frameIndex:" << frameIndex
+                                                    << "timestamp:" << frameTimestampNs << "ns)";
+            }
+        }
+
+        qCDebug(LogReplayLinkControllerLog) << "Loaded" << streamInfo.frameMetadata.size() << "frame metadata rows from" << csvPath;
+        
+        csvFile.close();
+    } else {
+        qCDebug(LogReplayLinkControllerLog) << "Video path is a file:" << videoPath;
+    }
+    
+    return streamInfo;
+}
+
 void LogReplayLinkController::_setReplayDataStatus(ReplayDataStatus status, const QString &message)
 {
     if (_replayDataStatus != status) {
@@ -432,23 +521,26 @@ bool LogReplayLinkController::loadFromMetadataFolder(const QString &metadataFold
             QString videoPath = streamObj["video_file_path"].toString();
             double streamStartUnix = streamObj["start_timestamp_unix"].toDouble();
 
-            // Convert stream timestamp to microseconds and calculate offset in milliseconds
-            quint64 streamStartUSecs = static_cast<quint64>(streamStartUnix * 1000000.0);
-            qint64 offsetMs = 0;
-            if (tlogStartUSecs > 0 && streamStartUSecs > 0) {
-                offsetMs = static_cast<qint64>((streamStartUSecs - tlogStartUSecs) / 1000);
-            }
-            
             // Convert relative path to absolute (relative to metadata folder root)
             if (!videoPath.isEmpty() && QFileInfo(videoPath).isRelative()) {
                 videoPath = QDir(metadataFolderPath).filePath(videoPath);
             }
             
-            qCDebug(LogReplayLinkControllerLog) << "RGB video:" << videoPath << "offset:" << offsetMs << "ms"
-                                                << "(stream:" << streamStartUSecs << "usecs)";
+            qCDebug(LogReplayLinkControllerLog) << "Processing video:" << videoPath;
 
             hasVideo = true;
-            VideoStreamInfo streamInfo { videoPath, offsetMs };
+            
+            // Process video path - handles both file and directory (frame-based) videos
+            VideoStreamInfo streamInfo = _processVideoPath(videoPath, tlogStartUSecs);
+            
+            // For file-based videos, use the metadata offset if not calculated from directory
+            if (!streamInfo.isDirectory && tlogStartUSecs > 0 && streamStartUnix > 0) {
+                quint64 streamStartUSecs = static_cast<quint64>(streamStartUnix * 1000000.0);
+                streamInfo.offsetMs = static_cast<qint64>((streamStartUSecs - tlogStartUSecs) / 1000);
+                qCDebug(LogReplayLinkControllerLog) << "File-based video offset:" << streamInfo.offsetMs << "ms"
+                                                    << "(stream:" << streamStartUSecs << "usecs)";
+            }
+            
             videoStreams.append(streamInfo);
         }
 
@@ -532,13 +624,30 @@ bool LogReplayLinkController::loadSessionByFlightId(const QString &flightId)
             qCDebug(LogReplayLinkControllerLog) << "Setting up video replay synchronization";
             qCDebug(LogReplayLinkControllerLog) << "  RGB:" << _rgbVideoInfo.videoPath << "offset:" << _rgbVideoInfo.offsetMs << "ms";
             qCDebug(LogReplayLinkControllerLog) << "  Thermal:" << _thermalVideoInfo.videoPath << "offset:" << _thermalVideoInfo.offsetMs << "ms";
+
+            CustomVideoManager::VideoStreamMetadata rgbStreamMeta;
+            rgbStreamMeta.videoPath = _rgbVideoInfo.videoPath;
+            rgbStreamMeta.offsetMs = -_rgbVideoInfo.offsetMs;
+            rgbStreamMeta.isDirectory = _rgbVideoInfo.isDirectory;
+            for (const FrameMetadata& frameMeta : _rgbVideoInfo.frameMetadata) {
+                CustomVideoManager::FrameMetadata mappedFrame;
+                mappedFrame.frameIndex = frameMeta.frameIndex;
+                mappedFrame.timestampNs = frameMeta.timestampNs;
+                rgbStreamMeta.frameMetadata.append(mappedFrame);
+            }
+
+            CustomVideoManager::VideoStreamMetadata thermalStreamMeta;
+            thermalStreamMeta.videoPath = _thermalVideoInfo.videoPath;
+            thermalStreamMeta.offsetMs = -_thermalVideoInfo.offsetMs;
+            thermalStreamMeta.isDirectory = _thermalVideoInfo.isDirectory;
+            for (const FrameMetadata& frameMeta : _thermalVideoInfo.frameMetadata) {
+                CustomVideoManager::FrameMetadata mappedFrame;
+                mappedFrame.frameIndex = frameMeta.frameIndex;
+                mappedFrame.timestampNs = frameMeta.timestampNs;
+                thermalStreamMeta.frameMetadata.append(mappedFrame);
+            }
             
-            bool loaded = videoMgr->enterReplayMode(
-                _rgbVideoInfo.videoPath,
-                _thermalVideoInfo.videoPath,
-                -_rgbVideoInfo.offsetMs,
-                -_thermalVideoInfo.offsetMs
-            );
+            bool loaded = videoMgr->enterReplayMode(rgbStreamMeta, thermalStreamMeta);
             
             if (loaded) {
                 // Connect tlog playback state to video playback
