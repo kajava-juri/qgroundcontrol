@@ -73,6 +73,11 @@ public:
      */
     Q_INVOKABLE void setStreamUri(int streamIndex, const QString& uri);
     Q_INVOKABLE QString getStreamUri(int streamIndex) const;
+    Q_INVOKABLE void setStreamId(int streamIndex, int streamId);
+    Q_INVOKABLE int getStreamId(int streamIndex) const;
+    Q_INVOKABLE void setStreamReady(int streamIndex, bool ready);
+    Q_INVOKABLE bool isStreamReady(int streamIndex) const;
+
 
     /**
      * Check stream status
@@ -148,6 +153,8 @@ private:
         int restartAttempts = 0;  // For exponential backoff in noisy WiFi
         QMetaObject::Connection restartConnection;  // Connection for deferred restart
         StopReason pendingStopReason = StopReason::None;  // Reason for pending stop (if any)
+        int streamId = -1; // Stream ID provided by data collector
+        bool ready = false; // True when data collector has sent signal that stream can be played
     };
 
     // Replay per-stream state
@@ -182,8 +189,8 @@ private:
 
     // StreamInfo _streams[STREAM_COUNT];
     std::array<StreamInfo, STREAM_COUNT> _streams{{
-        {"RGB", "", nullptr, nullptr, false, false},      // Empty - wait for VIDEO_STREAM_INFORMATION
-        {"Thermal", "", nullptr, nullptr, false, false}   // Empty - wait for VIDEO_STREAM_INFORMATION
+        {"RGB"},      // Empty - wait for VIDEO_STREAM_INFORMATION
+        {"Thermal"}   // Empty - wait for VIDEO_STREAM_INFORMATION
     }};
     QQuickWindow* _mainWindow = nullptr;
     bool _initialized = false;

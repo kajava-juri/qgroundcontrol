@@ -48,7 +48,7 @@ void DataCollectionController::toggleRecording() {
     }
 }
 
-void DataCollectionController::_handleStreamInfo(const QString& streamName, const QString& uri) {
+void DataCollectionController::_handleStreamInfo(const QString& streamName, const QString& uri, int streamId, bool rtspReady) {
 
     // Get CustomVideoManager from CustomPlugin
     CustomPlugin* plugin = qobject_cast<CustomPlugin*>(QGCCorePlugin::instance());
@@ -70,13 +70,35 @@ void DataCollectionController::_handleStreamInfo(const QString& streamName, cons
         qCWarning(DataCollectionControllerLog) << "StreamNames map is empty - not initialized yet?";
         return;
     }
-    
+
     // Update the URI for the corresponding stream
     for (const auto& [index, name] : CustomVideoManager::StreamNames) {
         qCDebug(DataCollectionControllerLog) << "Checking stream index" << index << "name" << QString::fromStdString(name);
         if (QString::fromStdString(name) == streamName) {
-            videoManager->setStreamUri(index, uri);  // This will automatically restart if needed
-            qCDebug(DataCollectionControllerLog) << "Updated stream URI for" << streamName << "to" << uri;
+            const bool vidReadyCached = _pendingVidReadyStreamIds.contains(streamId);
+            const bool effectiveReady = rtspReady || vidReadyCached;
+
+            videoManager->setStreamId(index, streamId);
+            videoManager->setStreamReady(index, effectiveReady);
+            videoManager->setStreamUri(index, uri);
+
+            if (vidReadyCached) {
+                _pendingVidReadyStreamIds.remove(streamId);
+            }
+
+            qCDebug(DataCollectionControllerLog) << "Updated stream URI for" << streamName
+                                                 << "to" << uri
+                                                 << "stream_id" << streamId
+                                                 << "rtsp_ready" << rtspReady
+                                                 << "vid_ready_cached" << vidReadyCached;
+
+            if (effectiveReady && !uri.isEmpty() && !videoManager->isStreamDecoding(index)) {
+                qCDebug(DataCollectionControllerLog) << "Starting stream" << index
+                                                     << "after stream info"
+                                                     << "(rtsp_ready=" << rtspReady
+                                                     << ", vid_ready_cached=" << vidReadyCached << ")";
+                videoManager->startStream(index);
+            }
             
             // Check if all streams now have URIs configured
             bool allStreamsConfigured = true;
@@ -208,9 +230,11 @@ void DataCollectionController::_getStreamInfoHttp() {
                             QJsonObject streamObj = streamVal.toObject();
                             QString name = streamObj["qgc_stream_name"].toString();
                             QString uri = streamObj["stream_url"].toString();
-                            qCDebug(DataCollectionControllerLog) << "Stream:" << name << "URI:" << uri;
+                            int streamId = streamObj["stream_id"].toInt();
+                            bool rtspReady = streamObj["rtsp_ready"].toBool();  // Optional field to indicate if stream is ready
+                            qCDebug(DataCollectionControllerLog) << "Stream:" << name << "URI:" << uri << "ID:" << streamId << "RTSP Ready:" << rtspReady;
                             // Update internal state with new URIs as needed
-                            _handleStreamInfo(name, uri);
+                            _handleStreamInfo(name, uri, streamId, rtspReady);
                         }
                     }
                 }
@@ -227,6 +251,8 @@ void DataCollectionController::_getStreamInfoHttp() {
 void DataCollectionController::startRecording() {
     qCDebug(DataCollectionControllerLog) << "Start recording invoked";
     if(!_isCollecting) {
+        _pendingVidReadyStreamIds.clear();
+        _vidReady = -1;
         _isCollecting = true;
         emit isCollectingChanged();
         _sendHttpRequest("start");
@@ -381,9 +407,9 @@ void DataCollectionController::_onActiveVehicleChanged(Vehicle* vehicle)
                 QString streamName = QString::fromLatin1(streamInfo.name, strnlen(streamInfo.name, sizeof(streamInfo.name)));
                 QString uri = QString::fromLatin1(streamInfo.uri, strnlen(streamInfo.uri, sizeof(streamInfo.uri)));
 
-                qCDebug(DataCollectionControllerLog) << "VIDEO_STREAM_INFORMATION received: Stream Name =" << streamName << "URI =" << uri;
+                qCDebug(DataCollectionControllerLog) << "VIDEO_STREAM_INFORMATION received: Stream Name =" << streamName << "URI =" << uri << "ID:" << streamInfo.stream_id;
 
-                _handleStreamInfo(streamName, uri);
+                _handleStreamInfo(streamName, uri, streamInfo.stream_id, false);
             }
         });
         
@@ -538,6 +564,55 @@ void DataCollectionController::_handleNamedValue(const QString& name, const QVar
         //emit vidCountChanged();
         return;
     }
+
+    if (name == "vid_ready") {
+        _vidReady = value.toInt();
+
+        CustomPlugin* plugin = qobject_cast<CustomPlugin*>(QGCCorePlugin::instance());
+        if (!plugin || !plugin->customVideoManager()) {
+            qCWarning(DataCollectionControllerLog) << "vid_ready received but CustomVideoManager unavailable";
+            _pendingVidReadyStreamIds.insert(_vidReady);
+            return;
+        }
+
+        CustomVideoManager* videoManager = plugin->customVideoManager();
+        bool matchedStream = false;
+
+        for (int i = 0; i < CustomVideoManager::STREAM_COUNT; i++) {
+            if (videoManager->getStreamId(i) != _vidReady) {
+                continue;
+            }
+
+            matchedStream = true;
+            videoManager->setStreamReady(i, true);
+
+            const QString streamUri = videoManager->getStreamUri(i);
+            if (streamUri.isEmpty()) {
+                qCDebug(DataCollectionControllerLog) << "vid_ready received for stream index" << i
+                                                     << "but URI is empty - waiting for stream info update";
+                continue;
+            }
+
+            if (videoManager->isStreamDecoding(i)) {
+                qCDebug(DataCollectionControllerLog) << "vid_ready for stream" << i
+                                                     << "but stream already decoding";
+                continue;
+            }
+
+            qCDebug(DataCollectionControllerLog) << "vid_ready received for stream" << i
+                                                 << "(stream_id" << _vidReady << ") - starting stream";
+            videoManager->startStream(i);
+        }
+
+        if (!matchedStream) {
+            const bool inserted = !_pendingVidReadyStreamIds.contains(_vidReady);
+            _pendingVidReadyStreamIds.insert(_vidReady);
+            qCDebug(DataCollectionControllerLog) << "vid_ready received before stream mapping for stream_id" << _vidReady
+                                                 << (inserted ? "(cached)" : "(already cached)");
+        }
+
+        return;
+    }
 }
 
 void DataCollectionController::_updateSourceStatus(const QString& source, const QString& field, const QVariant& value)
@@ -611,6 +686,9 @@ void DataCollectionController::_handleCollectionEnd()
         _isCollecting = false;
         emit isCollectingChanged();
     }
+
+    _pendingVidReadyStreamIds.clear();
+    _vidReady = -1;
     
     qCDebug(DataCollectionControllerLog) << "Collection cleanup completed";
 }

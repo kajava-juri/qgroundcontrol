@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QtCore/QObject>
+#include <QtCore/QSet>
 #include <QtCore/QTimer>
 #include <QtQml/qqml.h>
 #include <QtNetwork/QNetworkAccessManager>
@@ -115,6 +116,7 @@ private:
     bool _dcOk{false};
     int _vidCount{0};
     int _vidFlags{0};
+    int _vidReady{-1};
     
     // RTK GPS variables
     int _rtkFix{0};
@@ -133,7 +135,7 @@ private:
     void _updateSourceStatus(const QString& source, const QString& field, const QVariant& value);
     void _handleCollectionEnd();  // Cleanup when collection ends
     void _getStreamInfoHttp();
-    void _handleStreamInfo(const QString& streamName, const QString& uri);
+    void _handleStreamInfo(const QString& streamName, const QString& uri, int streamId, bool rtspReady = false);
     void _startPeriodicStreamInfoRequest();  // Start periodic requests
     void _stopPeriodicStreamInfoRequest();   // Stop periodic requests
     void _sendReadySignalToDataCollector();
@@ -147,6 +149,7 @@ private:
     QNetworkAccessManager _networkManager;
     QTimer _streamInfoTimer;            // Timer for periodic requests
     int _streamInfoRetries{0};          // Counter for alternating between modern/legacy commands
+    QSet<int> _pendingVidReadyStreamIds; // vid_ready events received before stream mapping/URI
     QString _remoteDataFetchpath;
     QTimer _periodicSyncTimer;          // Timer for periodic data sync during collection
     bool _downloadInProgress{false};    // Track if rsync/cp is currently running

@@ -542,33 +542,13 @@ void CustomVideoManager::setStreamUri(int streamIndex, const QString& uri)
         return;
     }
 
-    QString currentUri = _streams[streamIndex].uri;
+    StreamInfo& stream = _streams[streamIndex];
+    const QString currentUri = stream.uri;
 
-    qCDebug(CustomVideoManagerLog) << "Current URI for stream" << streamIndex << "is" << _streams[streamIndex].uri;
+    qCDebug(CustomVideoManagerLog) << "Current URI for stream" << streamIndex << "is" << stream.uri;
     
-    // If URI is the same, check if stream is already running
     if (currentUri == uri) {
-        // If stream is already decoding, nothing to do
-        if (_streams[streamIndex].decoding) {
-            qCWarning(CustomVideoManagerLog) << "Stream" << streamIndex << "URI unchanged and already decoding, skipping";
-            return;
-        }
-        // URI is same but stream not running - need to restart it properly
-        qCWarning(CustomVideoManagerLog) << "Stream" << streamIndex << "URI unchanged but not decoding, restarting";
-        if (!uri.isEmpty()) {
-            // Stop first if receiver is in started state (prevents "Already running!" error)
-            if (_streams[streamIndex].receiver && _streams[streamIndex].receiver->started()) {
-                qCWarning(CustomVideoManagerLog) << "Stream" << streamIndex << "stopping stale receiver, will auto-restart via onStopComplete";
-                // onStopComplete handler will automatically restart after stop completes
-                _streams[streamIndex].pendingStopReason = StopReason::UriChange;  // Set reason for stop to prevent auto-restart in onStopComplete
-                stopStream(streamIndex);
-            } else {
-
-                // Not started, but if state is not yet active (from external data collector), then dont start
-
-                startStream(streamIndex);
-            }
-        }
+        qCDebug(CustomVideoManagerLog) << "Stream" << streamIndex << "URI unchanged, no action";
         return;
     }
 
@@ -577,18 +557,18 @@ void CustomVideoManager::setStreamUri(int streamIndex, const QString& uri)
                                           << "URI changing from" << currentUri 
                                           << "to" << uri;
         
-        if (_streams[streamIndex].receiver && _streams[streamIndex].receiver->started()) {
+        if (stream.receiver && stream.receiver->started()) {
             qCWarning(CustomVideoManagerLog) << "Stopping stream" << streamIndex 
                                               << "before URI change";
             
-            // Disable auto-restart temporarily - we'll start manually after URI update
-            _streams[streamIndex].allowAutoRestart = false;
+            // Stop receiver first and only then update URI to keep state transitions explicit.
+            stream.pendingStopReason = StopReason::UriChange;
             stopStream(streamIndex);
             
             // Wait for stop to complete before updating URI
             // Use single-shot connection to onStopComplete
             QMetaObject::Connection* conn = new QMetaObject::Connection();
-            *conn = connect(_streams[streamIndex].receiver, &VideoReceiver::onStopComplete, this,
+            *conn = connect(stream.receiver, &VideoReceiver::onStopComplete, this,
                 [this, streamIndex, uri, conn](VideoReceiver::STATUS status) {
                     Q_UNUSED(status);
                     qCWarning(CustomVideoManagerLog) << "Stream" << streamIndex 
@@ -596,30 +576,27 @@ void CustomVideoManager::setStreamUri(int streamIndex, const QString& uri)
                     disconnect(*conn);
                     delete conn;
                     
-                    // Now update URI and start
+                    // Update URI and wait for vid_ready signal to start.
                     _streams[streamIndex].uri = uri;
+                    _streams[streamIndex].ready = false;
                     emit streamUriChanged(streamIndex, uri);
-                    
-                    if (!uri.isEmpty()) {
-                        qCWarning(CustomVideoManagerLog) << "Starting stream" << streamIndex 
-                                                          << "with new URI";
-                        startStream(streamIndex);
-                    }
+
+                    qCWarning(CustomVideoManagerLog) << "Stream" << streamIndex
+                                                     << "URI updated, waiting for vid_ready to start";
                 });
             return;  // Exit early - continuation happens in callback
         }
     }
     
     // Update URI
-    _streams[streamIndex].uri = uri;
+    stream.uri = uri;
+    stream.ready = false;
     emit streamUriChanged(streamIndex, uri);  // Notify QML
     qCWarning(CustomVideoManagerLog) << "Updated internal URI for stream" << streamIndex;
 
-    // Start stream if URI is valid
     if (!uri.isEmpty()) {
-        qCWarning(CustomVideoManagerLog) << "Starting stream" << streamIndex 
-                                          << "with new URI";
-        startStream(streamIndex);
+        qCWarning(CustomVideoManagerLog) << "Stream" << streamIndex
+                                         << "URI set, waiting for vid_ready to start";
     } else {
         qCWarning(CustomVideoManagerLog) << "URI is empty, not starting stream" << streamIndex;
     }
@@ -632,6 +609,42 @@ QString CustomVideoManager::getStreamUri(int streamIndex) const
     }
 
     return _streams[streamIndex].uri;
+}
+
+void CustomVideoManager::setStreamId(int streamIndex, int streamId)
+{
+    if (streamIndex < 0 || streamIndex >= STREAM_COUNT) {
+        return;
+    }
+
+    _streams[streamIndex].streamId = streamId;
+}
+
+int CustomVideoManager::getStreamId(int streamIndex) const
+{
+    if (streamIndex < 0 || streamIndex >= STREAM_COUNT) {
+        return -1;
+    }
+
+    return _streams[streamIndex].streamId;
+}
+
+void CustomVideoManager::setStreamReady(int streamIndex, bool ready)
+{
+    if (streamIndex < 0 || streamIndex >= STREAM_COUNT) {
+        return;
+    }
+
+    _streams[streamIndex].ready = ready;
+}
+
+bool CustomVideoManager::isStreamReady(int streamIndex) const
+{
+    if (streamIndex < 0 || streamIndex >= STREAM_COUNT) {
+        return false;
+    }
+
+    return _streams[streamIndex].ready;
 }
 
 bool CustomVideoManager::isStreamActive(int streamIndex) const
