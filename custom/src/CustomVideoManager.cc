@@ -915,15 +915,15 @@ bool CustomVideoManager::enterReplayMode(const VideoStreamMetadata& rgbStream, c
         }
     }
 
-    for (int i = 0; i < STREAM_COUNT; i++) {
-        if (_replay.streams[i].loaded && _streams[i].receiver) {
-            // Manually update state and emit signals
-            _streams[i].active = true;
-            _streams[i].decoding = true;
-            emit streamStateChanged(i, true);
-            emit streamDecodingChanged(i, true);
-        }
-    }
+    // for (int i = 0; i < REPLAY_STREAM_COUNT; i++) {
+    //     if (_replay.streams[i].loaded && _replay.streams[i].receiver) {
+    //         // Manually update state and emit signals
+    //         _streams[i].active = true;
+    //         _streams[i].decoding = true;
+    //         emit streamStateChanged(i, true);
+    //         emit streamDecodingChanged(i, true);
+    //     }
+    // }
 
     return true;
 }
@@ -990,7 +990,10 @@ GstElement* CustomVideoManager::_getVideoFramesPipeline(const VideoStreamMetadat
                  "stream-type", 1,
                  "size", static_cast<gint64>(streamDurationNs),
                  "duration", static_cast<gint64>(streamDurationNs),
-                 "block", TRUE,
+                 // High-res JPG replay can exceed default appsrc queue thresholds.
+                 // Keep push-buffer non-blocking and raise queue budget to avoid stalls.
+                 "block", FALSE,
+                 "max-bytes", static_cast<guint64>(16 * 1024 * 1024),
                  nullptr);
     gst_caps_unref(caps);
 
@@ -1052,7 +1055,7 @@ void CustomVideoManager::_onReplayAppSrcNeedData(GstElement* appsrc, guint lengt
         return;
     }
 
-    constexpr int maxFramesPerNeedData = 4;
+    const int maxFramesPerNeedData = (streamIndex == STREAM_DRONE_CAMERA) ? 1 : 4;
     int pushedFrames = 0;
 
     while (pushedFrames < maxFramesPerNeedData
@@ -1544,7 +1547,7 @@ void CustomVideoManager::exitReplayMode()
         rs.baseFrameTimestampNs = 0;
         rs.frameEosSent = false;
 
-        if (i < REPLAY_STREAM_COUNT) {
+        if (i < STREAM_COUNT) {
             _streams[i].pendingStopReason = StopReason::None;
             _streams[i].active = false;
             _streams[i].decoding = false;

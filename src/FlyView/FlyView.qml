@@ -112,16 +112,16 @@ Item {
         }
 
         FlyViewVideo {
-            id:         videoControl
-            pipView:    _pipView
+            id:             videoControl
+            pipView:        _pipView
+            inReplayMode:   videoControl.inReplayMode
         }
 
         Item {
             id: droneReplayControl
             anchors.fill: parent
-            visible: false
 
-            property Item pipView: _pipView
+            property Item pipView: _pipView3
             property Item pipState: droneReplayPipState
 
             PipState {
@@ -130,10 +130,19 @@ Item {
                 isDark:     true
             }
 
-            GstGLQt6VideoItem {
-                id: droneReplayVideoItem
+            Loader {
+                id: droneReplayLoader
                 anchors.fill: parent
-                objectName: "customDroneReplayVideo"
+                sourceComponent: droneReplayComponent
+            }
+
+            Component {
+                id: droneReplayComponent
+                GstGLQt6VideoItem {
+                    id: droneReplayVideoItem
+                    anchors.fill: parent
+                    objectName: "customDroneReplayVideo"
+                }
             }
         }
 
@@ -175,7 +184,7 @@ Item {
             Rectangle {
                 anchors.fill: parent
                 color: "black"
-                visible: !customStreamControl.streamActive
+                visible: !customStreamControl.streamActive && !videoControl.inReplayMode 
                 z: 1  // Above video but below other UI elements
             }
 
@@ -228,6 +237,18 @@ Item {
             }
         }
 
+        Item {
+            id: customStreamDummy2
+            
+            property Item pipState: customStreamDummyPipState2
+            
+            PipState {
+                id:         customStreamDummyPipState2
+                pipView:    _pipView3
+                isDark:     false
+            }
+        }
+
         PipView {
             id:                     _pipView2
             anchors.right:          parent.right
@@ -241,6 +262,20 @@ Item {
             show:                   true
             z:                      QGroundControl.zOrderWidgets
             visible:                !_gridModeActive  // Hide when grid mode active
+        }
+
+        PipView {
+            id:                     _pipView3
+            anchors.left:           parent.left
+            anchors.bottom:         parent.bottom
+            item1IsFullSettingsKey: "DroneReplayIsFullscreen"
+            item1IsFullDefault:     true
+            item1:                  droneReplayControl
+            item2:                  customStreamDummy
+            show:                   true
+            z:                      QGroundControl.zOrderWidgets
+            visible:                !_gridModeActive &&  videoControl.inReplayMode // Hide when grid mode active
+
         }
 
         // New Grid View
