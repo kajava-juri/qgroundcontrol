@@ -90,7 +90,9 @@ public:
     // Stream indices
     static constexpr int STREAM_RGB = 0;
     static constexpr int STREAM_THERMAL = 1;
+    static constexpr int STREAM_DRONE_CAMERA = 2;  // Optional third stream for drone camera footage in replay mode
     static constexpr int STREAM_COUNT = 2;
+    static constexpr int REPLAY_STREAM_COUNT = STREAM_COUNT + 1;
 
     QVariantList videoReplaySegments() const;  // For QML display of replay segments
 
@@ -110,6 +112,7 @@ private:
         CommLost,
         ReplayModeEnter
     };
+    struct ReplayStreamInfo;
     void _setupReceiver(int streamIndex, QQuickItem* widget);
     void _startReceiver(int streamIndex);
     void _stopReceiver(int streamIndex);
@@ -130,8 +133,10 @@ private:
 public:
 
     bool enterReplayMode(const VideoStreamMetadata& rgbStream, const VideoStreamMetadata& thermalStream);
-    Q_INVOKABLE bool enterReplayMode(const QString& rgbVideoPath, const QString& thermalVideoPath, 
-                                      qint64 rgbOffsetMs = 0, qint64 thermalOffsetMs = 0);
+    bool enterReplayMode(const VideoStreamMetadata& rgbStream, const VideoStreamMetadata& thermalStream, const VideoStreamMetadata& droneCameraStream);
+    Q_INVOKABLE bool enterReplayMode(const QString& rgbVideoPath, const QString& thermalVideoPath,
+                                      const QString& droneVideoPath = QString(),
+                                      qint64 rgbOffsetMs = 0, qint64 thermalOffsetMs = 0, qint64 droneOffsetMs = 0);
     Q_INVOKABLE void exitReplayMode();
     Q_INVOKABLE void seekToPosition(quint32 tlogTimeSecs);  // For manual slider seeking
     Q_INVOKABLE void updateReplayTime(quint32 tlogTimeSecs);  // Update cached time (no seeking)
@@ -161,6 +166,7 @@ private:
     struct ReplayStreamInfo {
         GstElement* pipeline = nullptr;   // playbin instance
         void* sink = nullptr;             // GstGLQt6 sink (same widget as live)
+        VideoReceiver* receiver = nullptr; // Keep receiver alive for sink/thread lifecycle
         bool loaded = false;
         QString videoPath;
         bool isFrameSequence = false;
@@ -176,7 +182,7 @@ private:
     };
 
     struct ReplayState {
-        std::array<ReplayStreamInfo, STREAM_COUNT> streams;
+        std::array<ReplayStreamInfo, REPLAY_STREAM_COUNT> streams;
         bool active = false;
         bool isPlaying = false;  // Track if replay is currently playing
         double playbackSpeed = 1.0;
@@ -190,7 +196,7 @@ private:
     // StreamInfo _streams[STREAM_COUNT];
     std::array<StreamInfo, STREAM_COUNT> _streams{{
         {"RGB"},      // Empty - wait for VIDEO_STREAM_INFORMATION
-        {"Thermal"}   // Empty - wait for VIDEO_STREAM_INFORMATION
+        {"Thermal"},   // Empty - wait for VIDEO_STREAM_INFORMATION
     }};
     QQuickWindow* _mainWindow = nullptr;
     bool _initialized = false;

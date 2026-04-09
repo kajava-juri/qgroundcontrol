@@ -17,6 +17,7 @@ Item {
 
     property Item pipView
     property Item pipState: videoPipState
+    property bool inReplayMode: false
 
     property int    _track_rec_x:       0
     property int    _track_rec_y:       0
@@ -56,13 +57,13 @@ Item {
         id:             videoStreaming
         anchors.fill:   parent
         useSmallFont:   _root.pipState.state !== _root.pipState.fullState
-        visible:        QGroundControl.videoManager.isStreamSource
+        visible:        QGroundControl.videoManager.isStreamSource && !_root.inReplayMode
     }
     //-- UVC Video (USB Camera or Video Device)
     Loader {
         id:             cameraLoader
         anchors.fill:   parent
-        visible:        QGroundControl.videoManager.isUvc
+        visible:        QGroundControl.videoManager.isUvc && !_root.inReplayMode
         source:         QGroundControl.videoManager.uvcEnabled ? "qrc:/qml/QGroundControl/FlyView/FlightDisplayViewUVC.qml" : "qrc:/qml/QGroundControl/FlyView//FlightDisplayViewDummy.qml"
     }
 

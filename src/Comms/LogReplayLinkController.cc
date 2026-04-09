@@ -22,6 +22,8 @@
 #include "CustomPlugin.h"
 
 #include <QtCore/QDir>
+#include <QtCore/QDateTime>
+#include <QtCore/QJsonArray>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonDocument>
@@ -331,15 +333,21 @@ LogReplayLinkController::VideoStreamInfo LogReplayLinkController::_processVideoP
     if (pathInfo.isDir()) {
         qCDebug(LogReplayLinkControllerLog) << "Video path is a directory (frame-based):" << videoPath;
         streamInfo.isDirectory = true;
-        
-        // Read metadata.csv from the directory
-        QString csvPath = pathInfo.filePath() + "/metadata.csv";
-        QFile csvFile(csvPath);
-        
+
+        const QString metadataCsvPath = pathInfo.filePath() + "/metadata.csv";
+        const QString dataCsvPath = pathInfo.filePath() + "/data.csv";
+        QString csvPath;
+        QFile csvFile(metadataCsvPath);
+
         if (!csvFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-            qCWarning(LogReplayLinkControllerLog) << "Failed to open metadata.csv at:" << csvPath;
-            return streamInfo;
+            csvFile.setFileName(dataCsvPath);
+            if (!csvFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+                qCWarning(LogReplayLinkControllerLog) << "Failed to open metadata.csv or data.csv at:" << metadataCsvPath << dataCsvPath;
+                return streamInfo;
+            }
         }
+
+        csvPath = csvFile.fileName();
         
         QTextStream in(&csvFile);
         QString headerLine = in.readLine();  // Skip header line
@@ -405,6 +413,105 @@ LogReplayLinkController::VideoStreamInfo LogReplayLinkController::_processVideoP
     return streamInfo;
 }
 
+LogReplayLinkController::VideoStreamInfo LogReplayLinkController::_processDroneLogPath(const QString &metadataFolderPath, const QString &runId, quint64 tlogStartUSecs)
+{
+    VideoStreamInfo streamInfo;
+
+    const QDir metadataRoot(metadataFolderPath);
+    const QDir droneLogRoot(metadataRoot.filePath(QStringLiteral("drone_log")));
+    const QDir flightRoot(droneLogRoot.filePath(runId));
+
+    if (!flightRoot.exists()) {
+        qCDebug(LogReplayLinkControllerLog) << "No drone_log folder found for run ID:" << runId;
+        return streamInfo;
+    }
+
+    const QStringList logDirs = flightRoot.entryList(QStringList() << QStringLiteral("log*"), QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
+    if (logDirs.isEmpty()) {
+        qCWarning(LogReplayLinkControllerLog) << "No log directories found in drone_log path:" << flightRoot.path();
+        return streamInfo;
+    }
+
+    const QString logDirPath = flightRoot.filePath(logDirs.first());
+    const QFileInfo infoFile(QDir(logDirPath).filePath(QStringLiteral("info.json")));
+    if (!infoFile.exists()) {
+        qCWarning(LogReplayLinkControllerLog) << "No info.json found for drone_log path:" << infoFile.filePath();
+        return streamInfo;
+    }
+
+    QFile infoJsonFile(infoFile.filePath());
+    if (!infoJsonFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        qCWarning(LogReplayLinkControllerLog) << "Failed to open drone_log info.json at:" << infoFile.filePath();
+        return streamInfo;
+    }
+
+    const QJsonDocument infoDoc = QJsonDocument::fromJson(infoJsonFile.readAll());
+    infoJsonFile.close();
+    if (!infoDoc.isObject()) {
+        qCWarning(LogReplayLinkControllerLog) << "Invalid drone_log info.json:" << infoFile.filePath();
+        return streamInfo;
+    }
+
+    const QJsonObject infoObj = infoDoc.object();
+    const QString startTimeDateString = infoObj.value(QStringLiteral("start_time_date")).toString();
+    const quint64 startTimeMonotonicNs = infoObj.value(QStringLiteral("start_time_monotonic_ns")).toVariant().toULongLong();
+    const QJsonArray channels = infoObj.value(QStringLiteral("channels")).toArray();
+    QString cameraPipePath;
+
+    for (const QJsonValue& channelValue : channels) {
+        if (!channelValue.isObject()) {
+            continue;
+        }
+
+        const QJsonObject channelObj = channelValue.toObject();
+        const QString typeString = channelObj.value(QStringLiteral("type_string")).toString();
+        const QString pipePath = channelObj.value(QStringLiteral("pipe_path")).toString();
+
+        if (typeString == QLatin1String("cam") && pipePath.contains(QStringLiteral("hires_large_color"))) {
+            cameraPipePath = pipePath;
+            break;
+        }
+
+        if (cameraPipePath.isEmpty() && typeString == QLatin1String("cam")) {
+            cameraPipePath = pipePath;
+        }
+    }
+
+    if (cameraPipePath.isEmpty()) {
+        qCWarning(LogReplayLinkControllerLog) << "Could not find a camera channel in drone_log info.json:" << infoFile.filePath();
+        return streamInfo;
+    }
+
+    const QString cameraPath = QDir(logDirPath).filePath(cameraPipePath.startsWith(QLatin1Char('/')) ? cameraPipePath.mid(1) : cameraPipePath);
+    streamInfo = _processVideoPath(cameraPath, 0);
+
+    if (streamInfo.isDirectory && !streamInfo.frameMetadata.isEmpty()) {
+        const QDateTime startDateTime = QDateTime::fromString(startTimeDateString, QStringLiteral("yyyy-MM-dd HH:mm:ss"));
+        if (!startDateTime.isValid()) {
+            qCWarning(LogReplayLinkControllerLog) << "Invalid start_time_date in drone_log info.json:" << startTimeDateString;
+        } else if (startTimeMonotonicNs == 0) {
+            qCWarning(LogReplayLinkControllerLog) << "Missing start_time_monotonic_ns in drone_log info.json:" << infoFile.filePath();
+        } else {
+            constexpr qint64 voxlTimezoneOffsetSecs = 3 * 60 * 60;
+            const QDateTime adjustedStartDateTime = startDateTime.addSecs(voxlTimezoneOffsetSecs);
+            const quint64 firstFrameTimestampNs = streamInfo.frameMetadata.constFirst().timestampNs;
+            const qint64 monotonicDeltaNs = static_cast<qint64>(firstFrameTimestampNs) - static_cast<qint64>(startTimeMonotonicNs);
+            const qint64 frameAbsoluteUsecs = static_cast<qint64>(adjustedStartDateTime.toMSecsSinceEpoch()) * 1000 + (monotonicDeltaNs / 1000);
+            streamInfo.offsetMs = static_cast<qint64>((frameAbsoluteUsecs - static_cast<qint64>(tlogStartUSecs)) / 1000);
+
+            qCDebug(LogReplayLinkControllerLog) << "Drone log timestamps anchored using start_time_date:" << startTimeDateString
+                                                << "adjustedStartTime:" << adjustedStartDateTime.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss"))
+                                                << "start_time_monotonic_ns:" << startTimeMonotonicNs
+                                                << "firstFrameTimestampNs:" << firstFrameTimestampNs
+                                                << "timezoneOffsetSecs:" << voxlTimezoneOffsetSecs
+                                                << "offsetMs:" << streamInfo.offsetMs;
+        }
+    }
+
+    qCDebug(LogReplayLinkControllerLog) << "Loaded drone camera replay stream from" << cameraPath;
+    return streamInfo;
+}
+
 void LogReplayLinkController::_setReplayDataStatus(ReplayDataStatus status, const QString &message)
 {
     if (_replayDataStatus != status) {
@@ -426,6 +533,7 @@ void LogReplayLinkController::setReplayDataStatus(ReplayDataStatus status, const
 bool LogReplayLinkController::loadFromMetadataFolder(const QString &metadataFolderPath)
 {
     qCDebug(LogReplayLinkControllerLog) << "Loading replay from metadata folder:" << metadataFolderPath;
+    _metadataFolderPath = metadataFolderPath;
     
     // 1. Check if sessions directory exists
     QDir sessionsDir(metadataFolderPath + "/sessions/by_flight_id");
@@ -544,6 +652,13 @@ bool LogReplayLinkController::loadFromMetadataFolder(const QString &metadataFold
             videoStreams.append(streamInfo);
         }
 
+        VideoStreamInfo droneCameraStream = _processDroneLogPath(metadataFolderPath, runId, tlogStartUSecs);
+        if (!droneCameraStream.videoPath.isEmpty()
+                && (!droneCameraStream.isDirectory || !droneCameraStream.frameMetadata.isEmpty())) {
+            hasVideo = true;
+            videoStreams.append(droneCameraStream);
+        }
+
 
         SessionMetadata sessionMeta { runId, dcDurationSecs, tlogStartUSecs, hasVideo, hasTlog, tlogPath, videoStreams, tlogStartUSecs };
         _sessionsMetadata.append(sessionMeta);
@@ -600,13 +715,18 @@ bool LogReplayLinkController::loadSessionByFlightId(const QString &flightId)
     
     // Set up video synchronization if we have video files
     if (!sessionMeta->videoStreams.isEmpty()) {
+        _rgbVideoInfo = VideoStreamInfo();
+        _thermalVideoInfo = VideoStreamInfo();
+        _droneCameraVideoInfo = VideoStreamInfo();
+
         // Populate RGB/Thermal video info from first two streams
         for (const VideoStreamInfo& stream : sessionMeta->videoStreams) {
             if (_rgbVideoInfo.videoPath.isEmpty()) {
                 _rgbVideoInfo = stream;
             } else if (_thermalVideoInfo.videoPath.isEmpty()) {
                 _thermalVideoInfo = stream;
-                break;
+            } else if (_droneCameraVideoInfo.videoPath.isEmpty()) {
+                _droneCameraVideoInfo = stream;
             }
         }
         
@@ -624,6 +744,8 @@ bool LogReplayLinkController::loadSessionByFlightId(const QString &flightId)
             qCDebug(LogReplayLinkControllerLog) << "Setting up video replay synchronization";
             qCDebug(LogReplayLinkControllerLog) << "  RGB:" << _rgbVideoInfo.videoPath << "offset:" << _rgbVideoInfo.offsetMs << "ms";
             qCDebug(LogReplayLinkControllerLog) << "  Thermal:" << _thermalVideoInfo.videoPath << "offset:" << _thermalVideoInfo.offsetMs << "ms";
+            qCDebug(LogReplayLinkControllerLog) << "  Drone Camera:" << (_droneCameraVideoInfo.videoPath.isEmpty() ? "N/A" : _droneCameraVideoInfo.videoPath)
+                                            << "offset:" << _droneCameraVideoInfo.offsetMs << "ms";
 
             CustomVideoManager::VideoStreamMetadata rgbStreamMeta;
             rgbStreamMeta.videoPath = _rgbVideoInfo.videoPath;
@@ -647,7 +769,20 @@ bool LogReplayLinkController::loadSessionByFlightId(const QString &flightId)
                 thermalStreamMeta.frameMetadata.append(mappedFrame);
             }
             
-            bool loaded = videoMgr->enterReplayMode(rgbStreamMeta, thermalStreamMeta);
+            CustomVideoManager::VideoStreamMetadata droneStreamMeta;
+            if (!_droneCameraVideoInfo.videoPath.isEmpty()) {
+                droneStreamMeta.videoPath = _droneCameraVideoInfo.videoPath;
+                droneStreamMeta.offsetMs = -_droneCameraVideoInfo.offsetMs;
+                droneStreamMeta.isDirectory = _droneCameraVideoInfo.isDirectory;
+                for (const FrameMetadata& frameMeta : _droneCameraVideoInfo.frameMetadata) {
+                    CustomVideoManager::FrameMetadata mappedFrame;
+                    mappedFrame.frameIndex = frameMeta.frameIndex;
+                    mappedFrame.timestampNs = frameMeta.timestampNs;
+                    droneStreamMeta.frameMetadata.append(mappedFrame);
+                }
+            }
+
+            bool loaded = videoMgr->enterReplayMode(rgbStreamMeta, thermalStreamMeta, droneStreamMeta);
             
             if (loaded) {
                 // Connect tlog playback state to video playback

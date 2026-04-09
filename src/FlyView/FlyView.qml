@@ -85,6 +85,15 @@ Item {
         id: dataCollectionController
     }
 
+    Connections {
+        target: QGroundControl.corePlugin.customVideoManager
+
+        function onReplayModeChanged(active) {
+            videoControl.inReplayMode = active
+            droneReplayControl.visible = active
+        }
+    }
+
     Item {
         id:                 mapHolder
         anchors.fill:       parent
@@ -105,6 +114,27 @@ Item {
         FlyViewVideo {
             id:         videoControl
             pipView:    _pipView
+        }
+
+        Item {
+            id: droneReplayControl
+            anchors.fill: parent
+            visible: false
+
+            property Item pipView: _pipView
+            property Item pipState: droneReplayPipState
+
+            PipState {
+                id:         droneReplayPipState
+                pipView:    droneReplayControl.pipView
+                isDark:     true
+            }
+
+            GstGLQt6VideoItem {
+                id: droneReplayVideoItem
+                anchors.fill: parent
+                objectName: "customDroneReplayVideo"
+            }
         }
 
         Item {
@@ -175,9 +205,9 @@ Item {
             anchors.margins:        _toolsMargin
             item1IsFullSettingsKey: "MainFlyWindowIsMap"
             item1:                  mapControl
-            item2:                  QGroundControl.videoManager.hasVideo ? videoControl : null
-            show:                   QGroundControl.videoManager.hasVideo && !QGroundControl.videoManager.fullScreen &&
-                                        (videoControl.pipState.state === videoControl.pipState.pipState || mapControl.pipState.state === mapControl.pipState.pipState)
+            item2:                  droneReplayControl.visible ? droneReplayControl : (QGroundControl.videoManager.hasVideo ? videoControl : null)
+            show:                   (droneReplayControl.visible || QGroundControl.videoManager.hasVideo) && !QGroundControl.videoManager.fullScreen &&
+                                        ((droneReplayControl.visible && droneReplayControl.pipState.state === droneReplayControl.pipState.pipState) || (!droneReplayControl.visible && videoControl.pipState.state === videoControl.pipState.pipState) || mapControl.pipState.state === mapControl.pipState.pipState)
             z:                      QGroundControl.zOrderWidgets
             visible:                !_gridModeActive  // Hide when grid mode active
 

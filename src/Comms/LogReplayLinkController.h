@@ -127,6 +127,7 @@ private:
     static QString _secondsToHMS(uint32_t seconds);
     QString _extractFlightId(const QString &filename);
     QString _findTlogByFlightId(const QString &flightId);
+    VideoStreamInfo _processDroneLogPath(const QString &metadataFolderPath, const QString &flightId, quint64 tlogStartUSecs);
     VideoStreamInfo _processVideoPath(const QString &videoPath, quint64 tlogStartUSecs);
     void _requestReplayDataCheck(const QString &flightId);
     void _handleStatusTextMessage(const mavlink_message_t &message);
@@ -146,6 +147,7 @@ private:
     QString _metadataFolderPath;  // Root folder of loaded metadata
     VideoStreamInfo _rgbVideoInfo;
     VideoStreamInfo _thermalVideoInfo;
+    VideoStreamInfo _droneCameraVideoInfo;
     ReplayDataStatus _replayDataStatus = NotRequired;
     QPointer<LogReplayLink> _link;
     
