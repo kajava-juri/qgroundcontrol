@@ -970,8 +970,6 @@ GstElement* CustomVideoManager::_getVideoFramesPipeline(const VideoStreamMetadat
         return nullptr;
     }
 
-    GstCaps* caps = gst_caps_new_simple("image/jpeg", nullptr);
-
     qint64 streamDurationNs = 0;
     if (streamMeta.frameMetadata.size() > 1) {
         const quint64 firstTsNs = streamMeta.frameMetadata.first().timestampNs;
@@ -982,7 +980,6 @@ GstElement* CustomVideoManager::_getVideoFramesPipeline(const VideoStreamMetadat
     }
 
     g_object_set(src,
-                 "caps", caps,
                  "format", GST_FORMAT_TIME,
                  "is-live", FALSE,
                  "do-timestamp", FALSE,
@@ -995,7 +992,6 @@ GstElement* CustomVideoManager::_getVideoFramesPipeline(const VideoStreamMetadat
                  "block", FALSE,
                  "max-bytes", static_cast<guint64>(16 * 1024 * 1024),
                  nullptr);
-    gst_caps_unref(caps);
 
     (void) g_signal_connect(src, "need-data", G_CALLBACK(_onReplayAppSrcNeedData),
                             reinterpret_cast<gpointer>(static_cast<intptr_t>(streamIndex)));

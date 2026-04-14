@@ -181,6 +181,33 @@ Item {
             }
         }
 
+    // Temporary button to call _getReplayDataRemotePath directly for testing
+    Rectangle {
+        anchors.top: dualVideoWidget.bottom
+        anchors.right: parent.right
+        anchors.margins: ScreenTools.defaultFontPixelWidth
+        width: 150
+        height: 40
+        color: qgcPal.button
+        radius: 4
+
+        Text {
+            anchors.centerIn: parent
+            text: "Download Replay Data"
+            color: qgcPal.buttonText
+            font.pixelSize: ScreenTools.smallFontPointSize
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            onClicked: {
+                if (dataController) {
+                    dataController.manualDownloadReplayData()
+                }
+            }
+        }
+    }
+
         // Detailed Status Panel (for debugging)
     Rectangle {
         anchors.top: parent.top

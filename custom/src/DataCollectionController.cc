@@ -283,6 +283,11 @@ void DataCollectionController::stopRecording() {
     }
 }
 
+Q_INVOKABLE void DataCollectionController::manualDownloadReplayData()
+{
+    _getReplayDataRemotePath();
+}
+
 QVariant DataCollectionController::getSourceField(const QString& source, const QString& field) const
 {
     if (_sourceStatus.contains(source)) {
@@ -653,7 +658,7 @@ void DataCollectionController::_handleCollectionEnd()
     _stopPeriodicStreamInfoRequest();
     
     // Stop periodic data sync
-    _stopPeriodicDataSync();
+    // _stopPeriodicDataSync();
     
     // Explicitly stop all video streams to prevent timeout/resource leaks
     CustomPlugin* plugin = qobject_cast<CustomPlugin*>(QGCCorePlugin::instance());
@@ -669,17 +674,6 @@ void DataCollectionController::_handleCollectionEnd()
         qCWarning(DataCollectionControllerLog) << "Could not access CustomVideoManager for stream cleanup";
     }
 
-    // Delay final sync to allow Python time to finalize metadata files
-    // Without this delay, rsync starts immediately and may miss the final metadata.json
-    qCDebug(DataCollectionControllerLog) << "Scheduling final data sync in" << FINAL_SYNC_DELAY_MS << "ms";
-    QTimer::singleShot(FINAL_SYNC_DELAY_MS, this, [this]() {
-        if (!_downloadInProgress) {
-            qCDebug(DataCollectionControllerLog) << "Starting final data sync";
-            _getReplayDataRemotePath();
-        } else {
-            qCDebug(DataCollectionControllerLog) << "Download still in progress, final sync will happen after current one completes";
-        }
-    });
     
     // Update recording state
     if (_isCollecting) {
@@ -691,6 +685,24 @@ void DataCollectionController::_handleCollectionEnd()
     _vidReady = -1;
     
     qCDebug(DataCollectionControllerLog) << "Collection cleanup completed";
+}
+
+void DataCollectionController::_parseRsyncOutput(const QString& output)
+{
+    // Example: 105.45M  13%  602.83kB/s    0:02:50 (xfr#495, ir-chk=1020/3825)
+    static QRegularExpression pctRe(R"(\b(\d+)%)");
+    static QRegularExpression toChkRe(R"(to-chk=(\d+)\/(\d+))");
+
+    QRegularExpressionMatch pctM = pctRe.match(output);
+    if (pctM.hasMatch()) {
+        QString pctStr = pctM.captured(1);
+        bool ok = false;
+        int pct = pctStr.toInt(&ok);
+        if (ok) {
+            qCDebug(DataCollectionControllerLog) << "Rsync progress:" << pct << "%";
+            // emit downloadProgress(pct);
+        }
+    }
 }
 
 void DataCollectionController::_downloadReplayData(const QString& remoteUsername, const QString& remoteHostName, const QString& remoteFilePath, const QString& localDirectoryPath)
@@ -730,22 +742,36 @@ void DataCollectionController::_downloadReplayData(const QString& remoteUsername
         qCDebug(DataCollectionControllerLog) << "Source is remote - using rsync";
         
         // Use rsync for remote transfer (incremental, only transfers changed files)
-        QProcess* rsync = new QProcess(this);
+        _rsyncProcess = new QProcess(this);
         QStringList arguments;
-        arguments << "-avz" << QString("%1@%2:%3").arg(remoteUsername, remoteHostName, remoteFilePath) << localDirectoryPath;
+        // option to get file count
+        // https://stackoverflow.com/questions/52305722/rsync-calculate-file-count-before-transfer
+        arguments   << "-av" 
+                    << "--info=progress2"
+                    << "--no-inc-recursive"
+                    << QString("%1@%2:%3").arg(remoteUsername, remoteHostName, remoteFilePath)
+                    << localDirectoryPath;
+
+        connect(_rsyncProcess, &QProcess::readyReadStandardOutput, this, [this]() {
+            while (_rsyncProcess->canReadLine()) {
+                const QString line = QString::fromUtf8(_rsyncProcess->readLine()).trimmed();
+                qCDebug(DataCollectionControllerLog) << "rsync output:" << line;
+                _parseRsyncOutput(line);
+            }
+        });
         
-        connect(rsync, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), 
-                this, [this, rsync](int exitCode, QProcess::ExitStatus exitStatus) {
+        connect(_rsyncProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), 
+                this, [this](int exitCode, QProcess::ExitStatus exitStatus) {
             _downloadInProgress = false;
             if (exitStatus == QProcess::NormalExit && exitCode == 0) {
                 qCDebug(DataCollectionControllerLog) << "Remote data download completed successfully";
             } else {
                 qCWarning(DataCollectionControllerLog) << "Remote data download failed with exit code" << exitCode;
             }
-            rsync->deleteLater();
+            _rsyncProcess->deleteLater();
         });
         
-        rsync->start("rsync", arguments);
+        _rsyncProcess->start("rsync", arguments);
     }
 }
 
@@ -1143,11 +1169,6 @@ void DataCollectionController::_stopPeriodicDataSync()
     }
     disconnect(&_periodicSyncTimer, nullptr, this, nullptr);
 
-    // Trigger one final sync before shutting down the timer
-    if (!_downloadInProgress) {
-        qCDebug(DataCollectionControllerLog) << "Triggering final data sync on periodic sync stop";
-        _getReplayDataRemotePath();
-    }
 }
 
 QString findSessionMetadata(const QString& folderPath, const QString& flightId) {
