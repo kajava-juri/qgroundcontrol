@@ -701,6 +701,8 @@ void DataCollectionController::_parseRsyncOutput(const QString& output)
         if (ok) {
             qCDebug(DataCollectionControllerLog) << "Rsync progress:" << pct << "%";
             // emit downloadProgress(pct);
+            _syncProgressPct = pct;
+            emit syncStatusChanged();
         }
     }
 }
@@ -731,8 +733,10 @@ void DataCollectionController::_downloadReplayData(const QString& remoteUsername
             _downloadInProgress = false;
             if (exitStatus == QProcess::NormalExit && exitCode == 0) {
                 qCDebug(DataCollectionControllerLog) << "Local data copy completed successfully";
+                emit syncCompleted(true);
             } else {
                 qCWarning(DataCollectionControllerLog) << "Local data copy failed with exit code" << exitCode;
+                emit syncCompleted(false);
             }
             copyProcess->deleteLater();
         });
@@ -740,7 +744,7 @@ void DataCollectionController::_downloadReplayData(const QString& remoteUsername
         copyProcess->start("cp", arguments);
     } else {
         qCDebug(DataCollectionControllerLog) << "Source is remote - using rsync";
-        
+        _syncInProgress = true;
         // Use rsync for remote transfer (incremental, only transfers changed files)
         _rsyncProcess = new QProcess(this);
         QStringList arguments;
@@ -765,7 +769,9 @@ void DataCollectionController::_downloadReplayData(const QString& remoteUsername
             _downloadInProgress = false;
             if (exitStatus == QProcess::NormalExit && exitCode == 0) {
                 qCDebug(DataCollectionControllerLog) << "Remote data download completed successfully";
+                emit syncCompleted(true);
             } else {
+                emit syncCompleted(false);
                 qCWarning(DataCollectionControllerLog) << "Remote data download failed with exit code" << exitCode;
             }
             _rsyncProcess->deleteLater();
@@ -795,7 +801,7 @@ void DataCollectionController::_getReplayDataRemotePath()
     
     // _remoteDataFetchpath = QString("%1@%2:%3").arg(plugin->customSettings()->remoteUserName()->rawValue().toString(), ipAddress, plugin->customSettings()->remoteDataPath()->rawValue().toString());
     
-    QNetworkRequest request(QUrl(QString(httpUrl + "/data_collection_info")));
+    QNetworkRequest request(QUrl(QString(httpUrl + "/data_collection_info?folder_name=" + plugin->customSettings()->folderName()->rawValue().toString())));
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
 
     QNetworkReply* reply = _networkManager.get(request);
@@ -820,6 +826,7 @@ void DataCollectionController::_getReplayDataRemotePath()
             }
         } else {
             qCDebug(DataCollectionControllerLog) << "Data collection info HTTP request failed. Error:" << reply->errorString();
+            emit syncCompleted(false);
         }
         reply->deleteLater();
     });

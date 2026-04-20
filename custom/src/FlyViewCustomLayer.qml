@@ -181,6 +181,19 @@ Item {
             }
         }
 
+        Rectangle {
+            anchors.top: parent.top
+            anchors.left: parent.right
+            anchors.margins: ScreenTools.defaultFontPixelWidth * 0.5
+            width: ScreenTools.defaultFontPixelHeight * 0.75
+            height: width
+            radius: width * 0.5
+            color: _thermalDecoding ? "lime" : (_thermalActive ? "gold" : "red")
+            border.width: 1
+            border.color: "black"
+            z: 2
+        }
+
     // Temporary button to call _getReplayDataRemotePath directly for testing
     Rectangle {
         anchors.top: dualVideoWidget.bottom
@@ -208,84 +221,28 @@ Item {
         }
     }
 
-        // Detailed Status Panel (for debugging)
-    Rectangle {
-        anchors.top: parent.top
-        anchors.right: dualVideoWidget.left
-        anchors.rightMargin: 16
-        width: debugColumn.width + 16
-        height: debugColumn.height + 16
-        color: "black"
-        opacity: 0.85
-        radius: 4
-        border.color: "white"
-        border.width: 1
-
-        Column {
-            id: debugColumn
-            anchors.centerIn: parent
-            spacing: 4
-
-            QGCLabel {
-                text: "Stream Status"
-                color: "cyan"
-                font.bold: true
-            }
-
-            QGCLabel {
-                text: "Manager: " + (_customVideoManager ? "✓" : "✗")
-                color: _customVideoManager ? "lime" : "red"
-            }
-
-            Rectangle { width: 150; height: 1; color: "gray" }
-
-            QGCLabel {
-                text: "RGB (0):"
-                color: "white"
-                font.bold: true
-            }
-            QGCLabel {
-                text: "  URI: " + _rgbUri
-                color: "white"
-                font.pixelSize: ScreenTools.smallFontPointSize
-            }
-            QGCLabel {
-                text: "  Active: " + (_rgbActive ? "✓" : "✗")
-                color: _rgbActive ? "lime" : "red"
-            }
-            QGCLabel {
-                text: "  Decoding: " + (_rgbDecoding ? "✓" : "✗")
-                color: _rgbDecoding ? "lime" : "red"
-            }
-
-            Rectangle { width: 150; height: 1; color: "gray" }
-
-            QGCLabel {
-                text: "Thermal (1):"
-                color: "white"
-                font.bold: true
-            }
-            QGCLabel {
-                text: "  URI: " + _thermalUri
-                color: "white"
-                font.pixelSize: ScreenTools.smallFontPointSize
-            }
-            QGCLabel {
-                text: "  Active: " + (_thermalActive ? "✓" : "✗")
-                color: _thermalActive ? "lime" : "red"
-            }
-            QGCLabel {
-                text: "  Decoding: " + (_thermalDecoding ? "✓" : "✗")
-                color: _thermalDecoding ? "lime" : "red"
-            }
-        }
-
-        // Click to hide (optional)
-        MouseArea {
-            anchors.fill: parent
-            onDoubleClicked: parent.visible = false
-        }
     }
+
+    ColumnLayout {
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.top: parent.top        
+        z: QGroundControl.zOrderWidgets
+        visible: dataController && dataController.syncInProgress
+
+        QGCLabel {
+            text: "Syncing replay data..." + (dataController.syncInProgress ? " (" + dataController.syncProgressPct + "%)" : "")
+            Layout.alignment: Qt.AlignHCenter
+        }
+
+        ProgressBar {
+            id: dcSyncProgressBar
+            Layout.fillWidth: true
+            visible: dataController && dataController.syncInProgress
+            width: Math.min(parent.width * 0.8, ScreenTools.defaultFontPixelWidth * 70)
+            height: ScreenTools.defaultFontPixelHeight * 4
+            to: 100
+            value: dataController ? dataController.syncProgressPct : 0
+        }
     }
 
     // Replay Mode Dialog
@@ -406,7 +363,7 @@ Item {
         rightEdgeCenterInset:   parentToolInsets.rightEdgeCenterInset
         rightEdgeBottomInset:   parentToolInsets.rightEdgeBottomInset
         topEdgeLeftInset:       parentToolInsets.topEdgeLeftInset
-        topEdgeCenterInset:     compassArrowIndicator.y + compassArrowIndicator.height
+        topEdgeCenterInset:     parentToolInsets.topEdgeCenterInset
         topEdgeRightInset:      parentToolInsets.topEdgeRightInset
         bottomEdgeLeftInset:    parentToolInsets.bottomEdgeLeftInset
         bottomEdgeCenterInset:  parentToolInsets.bottomEdgeCenterInset
@@ -488,7 +445,7 @@ Item {
     // - we export the width of this element as the leftEdgeCenterInset so that the map will recenter if the vehicle flys behind this element
     Rectangle {
         id: exampleRectangle
-        visible: false // to see this example, set this to true. To view insets, enable the insets viewer FlyView.qml
+        visible: true // to see this example, set this to true. To view insets, enable the insets viewer FlyView.qml
         anchors.left: parent.left
         anchors.top: parent.top
         anchors.bottom: parent.bottom

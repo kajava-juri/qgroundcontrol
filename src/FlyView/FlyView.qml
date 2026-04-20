@@ -58,6 +58,9 @@ Item {
     property var    _mapControl:            mapControl
     property real   _widgetMargin:          ScreenTools.defaultFontPixelWidth * 0.75
 
+    property bool   _rgbActive:            false
+    property bool   _rgbDecoding:           false
+    property var    _rgbUri:                ""
     property real   _fullItemZorder:    0
     property real   _pipItemZorder:     QGroundControl.zOrderWidgets
     property bool   _gridModeActive:    false  // Toggle between classic and grid mode
@@ -92,6 +95,25 @@ Item {
             videoControl.inReplayMode = active
             droneReplayControl.visible = active
         }
+
+        function onStreamStateChanged(streamIndex, active) {
+            if (streamIndex === 0) {
+                _rgbActive = active
+            }
+        }
+
+        function onStreamDecodingChanged(streamIndex, decoding) {
+            if (streamIndex === 0) {
+                _rgbDecoding = decoding
+            }
+        }
+
+        function onStreamUriChanged(streamIndex, uri) {
+            if (streamIndex === 0) {
+                _rgbUri = uri
+            }
+        }
+    
     }
 
     Item {
@@ -163,6 +185,19 @@ Item {
                 id: videoLoader
                 anchors.fill: parent
                 sourceComponent: rgbComponent  // Default
+            }
+
+            Rectangle {
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.margins: ScreenTools.defaultFontPixelWidth * 0.5
+                width: ScreenTools.defaultFontPixelHeight * 0.75
+                height: width
+                radius: width * 0.5
+                color: _rgbDecoding ? "lime" : (_rgbActive ? "gold" : "red")
+                border.width: 1
+                border.color: "black"
+                z: 2
             }
             
             Component {
