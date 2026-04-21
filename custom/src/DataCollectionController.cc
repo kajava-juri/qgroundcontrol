@@ -11,6 +11,7 @@
 #include <QtCore/QJsonObject>
 #include <QtCore/QStandardPaths>
 #include <QtCore/QDateTime>
+#include <QtCore/QFileInfo>
 #include "LogReplayLinkController.h"
 
 QGC_LOGGING_CATEGORY(DataCollectionControllerLog, "Custom.DataCollectionController")
@@ -286,6 +287,22 @@ void DataCollectionController::stopRecording() {
 Q_INVOKABLE void DataCollectionController::manualDownloadReplayData()
 {
     _getReplayDataRemotePath();
+}
+
+void DataCollectionController::cancelSync()
+{
+    if (!_syncInProgress || !_rsyncProcess) {
+        qCDebug(DataCollectionControllerLog) << "cancelSync: no active sync process";
+        return;
+    }
+
+    qCDebug(DataCollectionControllerLog) << "Cancelling active sync process";
+    _syncStatusText = "Sync cancelled";
+    emit syncStatusChanged();
+
+    if (_rsyncProcess->state() != QProcess::NotRunning) {
+        _rsyncProcess->kill();
+    }
 }
 
 QVariant DataCollectionController::getSourceField(const QString& source, const QString& field) const
@@ -691,7 +708,20 @@ void DataCollectionController::_parseRsyncOutput(const QString& output)
 {
     // Example: 105.45M  13%  602.83kB/s    0:02:50 (xfr#495, ir-chk=1020/3825)
     static QRegularExpression pctRe(R"(\b(\d+)%)");
-    static QRegularExpression toChkRe(R"(to-chk=(\d+)\/(\d+))");
+    static QRegularExpression toChkRe(R"((?:to|ir)-chk=(\d+)\/(\d+))");
+
+    QRegularExpressionMatch toChkM = toChkRe.match(output);
+    if (toChkM.hasMatch()) {
+        bool leftOk = false;
+        bool totalOk = false;
+        const int filesLeft = toChkM.captured(1).toInt(&leftOk);
+        const int filesTotal = toChkM.captured(2).toInt(&totalOk);
+
+        if (leftOk && totalOk && filesTotal >= 0) {
+            _syncFilesTotal = filesTotal;
+            _syncFilesDone = qMax(0, filesTotal - filesLeft);
+        }
+    }
 
     QRegularExpressionMatch pctM = pctRe.match(output);
     if (pctM.hasMatch()) {
@@ -700,11 +730,41 @@ void DataCollectionController::_parseRsyncOutput(const QString& output)
         int pct = pctStr.toInt(&ok);
         if (ok) {
             qCDebug(DataCollectionControllerLog) << "Rsync progress:" << pct << "%";
-            // emit downloadProgress(pct);
             _syncProgressPct = pct;
+
+            const QString sessionName = _syncSessionName.isEmpty() ? QStringLiteral("session") : _syncSessionName;
+            if (_syncFilesTotal > 0) {
+                const int filesLeft = qMax(0, _syncFilesTotal - _syncFilesDone);
+                _syncStatusText = QString("Syncing %1: %2% (%3/%4 files done, %5 left)")
+                                      .arg(sessionName)
+                                      .arg(_syncProgressPct)
+                                      .arg(_syncFilesDone)
+                                      .arg(_syncFilesTotal)
+                                      .arg(filesLeft);
+            } else {
+                _syncStatusText = QString("Syncing %1: %2%").arg(sessionName).arg(_syncProgressPct);
+            }
+
             emit syncStatusChanged();
         }
     }
+}
+
+void DataCollectionController::_notifySyncResult(bool success)
+{
+    if (success) {
+        // Periodic sync runs in the background while collecting; avoid repetitive success popups.
+        if (_isCollecting && _periodicSyncTimer.isActive()) {
+            return;
+        }
+
+        const QString sessionName = _syncSessionName.isEmpty() ? QStringLiteral("session") : _syncSessionName;
+        qgcApp()->showAppMessage(tr("Sync finished for %1").arg(sessionName));
+        return;
+    }
+
+    const QString sessionName = _syncSessionName.isEmpty() ? QStringLiteral("session") : _syncSessionName;
+    qgcApp()->showAppMessage(tr("Sync failed for %1. Check connection and logs.").arg(sessionName));
 }
 
 void DataCollectionController::_downloadReplayData(const QString& remoteUsername, const QString& remoteHostName, const QString& remoteFilePath, const QString& localDirectoryPath)
@@ -716,7 +776,14 @@ void DataCollectionController::_downloadReplayData(const QString& remoteUsername
     }
     
     qCDebug(DataCollectionControllerLog) << "Transferring data from:" << remoteFilePath << "to:" << localDirectoryPath;
-    _downloadInProgress = true;
+    _syncProgressPct = 0;
+    _syncFilesDone = 0;
+    _syncFilesTotal = 0;
+    if (_syncSessionName.isEmpty()) {
+        _syncSessionName = QFileInfo(remoteFilePath).fileName();
+    }
+    _syncStatusText = QString("Syncing %1: 0%").arg(_syncSessionName.isEmpty() ? QStringLiteral("session") : _syncSessionName);
+    emit syncStatusChanged();
     
     // Check if source path is local (same filesystem)
     QDir sourceDir(remoteFilePath);
@@ -733,9 +800,11 @@ void DataCollectionController::_downloadReplayData(const QString& remoteUsername
             _downloadInProgress = false;
             if (exitStatus == QProcess::NormalExit && exitCode == 0) {
                 qCDebug(DataCollectionControllerLog) << "Local data copy completed successfully";
+                _notifySyncResult(true);
                 emit syncCompleted(true);
             } else {
                 qCWarning(DataCollectionControllerLog) << "Local data copy failed with exit code" << exitCode;
+                _notifySyncResult(false);
                 emit syncCompleted(false);
             }
             copyProcess->deleteLater();
@@ -747,6 +816,7 @@ void DataCollectionController::_downloadReplayData(const QString& remoteUsername
         _syncInProgress = true;
         // Use rsync for remote transfer (incremental, only transfers changed files)
         _rsyncProcess = new QProcess(this);
+        QProcess* rsyncProcess = _rsyncProcess;
         QStringList arguments;
         // option to get file count
         // https://stackoverflow.com/questions/52305722/rsync-calculate-file-count-before-transfer
@@ -756,34 +826,48 @@ void DataCollectionController::_downloadReplayData(const QString& remoteUsername
                     << QString("%1@%2:%3").arg(remoteUsername, remoteHostName, remoteFilePath)
                     << localDirectoryPath;
 
-        connect(_rsyncProcess, &QProcess::readyReadStandardOutput, this, [this]() {
-            while (_rsyncProcess->canReadLine()) {
-                const QString line = QString::fromUtf8(_rsyncProcess->readLine()).trimmed();
+        connect(rsyncProcess, &QProcess::readyReadStandardOutput, this, [this, rsyncProcess]() {
+            while (rsyncProcess->canReadLine()) {
+                const QString line = QString::fromUtf8(rsyncProcess->readLine()).trimmed();
                 qCDebug(DataCollectionControllerLog) << "rsync output:" << line;
                 _parseRsyncOutput(line);
             }
         });
         
-        connect(_rsyncProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), 
-                this, [this](int exitCode, QProcess::ExitStatus exitStatus) {
+        connect(rsyncProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), 
+                this, [this, rsyncProcess](int exitCode, QProcess::ExitStatus exitStatus) {
             _downloadInProgress = false;
+            _syncInProgress = false;
             if (exitStatus == QProcess::NormalExit && exitCode == 0) {
                 qCDebug(DataCollectionControllerLog) << "Remote data download completed successfully";
+                _notifySyncResult(true);
                 emit syncCompleted(true);
             } else {
+                _notifySyncResult(false);
                 emit syncCompleted(false);
                 qCWarning(DataCollectionControllerLog) << "Remote data download failed with exit code" << exitCode;
             }
-            _rsyncProcess->deleteLater();
+
+            emit syncStatusChanged();
+
+            if (_rsyncProcess == rsyncProcess) {
+                _rsyncProcess = nullptr;
+            }
+            rsyncProcess->deleteLater();
         });
         
-        _rsyncProcess->start("rsync", arguments);
+        rsyncProcess->start("rsync", arguments);
     }
 }
 
 void DataCollectionController::_getReplayDataRemotePath()
 {
     qCDebug(DataCollectionControllerLog) << "Requesting collected data info via HTTP";
+
+    _syncInProgress = true;
+    _syncStatusText = QString("Requesting data info for sync...");
+    emit syncStatusChanged();
+    
 
     CustomPlugin* plugin = qobject_cast<CustomPlugin*>(QGCCorePlugin::instance());
     if (!plugin || !plugin->customSettings()) {
@@ -826,6 +910,7 @@ void DataCollectionController::_getReplayDataRemotePath()
             }
         } else {
             qCDebug(DataCollectionControllerLog) << "Data collection info HTTP request failed. Error:" << reply->errorString();
+            _notifySyncResult(false);
             emit syncCompleted(false);
         }
         reply->deleteLater();

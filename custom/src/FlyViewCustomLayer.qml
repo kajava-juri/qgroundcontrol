@@ -26,7 +26,7 @@ Item {
     property var mapControl:           _mapControl
     property bool gridModeActive:   false               // Whether grid mode is active
 
-    property var dataController: null
+    property var dataController: QGroundControl.corePlugin.dataCollectionController
     property bool replayDialogVisible: false 
 
     readonly property string noGPS:         qsTr("NO GPS")
@@ -178,48 +178,21 @@ Item {
                     horizontalAlignment: Text.AlignHCenter
                     z: 1  // Draw on top of video
                 }
-            }
-        }
 
-        Rectangle {
-            anchors.top: parent.top
-            anchors.left: parent.right
-            anchors.margins: ScreenTools.defaultFontPixelWidth * 0.5
-            width: ScreenTools.defaultFontPixelHeight * 0.75
-            height: width
-            radius: width * 0.5
-            color: _thermalDecoding ? "lime" : (_thermalActive ? "gold" : "red")
-            border.width: 1
-            border.color: "black"
-            z: 2
-        }
-
-    // Temporary button to call _getReplayDataRemotePath directly for testing
-    Rectangle {
-        anchors.top: dualVideoWidget.bottom
-        anchors.right: parent.right
-        anchors.margins: ScreenTools.defaultFontPixelWidth
-        width: 150
-        height: 40
-        color: qgcPal.button
-        radius: 4
-
-        Text {
-            anchors.centerIn: parent
-            text: "Download Replay Data"
-            color: qgcPal.buttonText
-            font.pixelSize: ScreenTools.smallFontPointSize
-        }
-
-        MouseArea {
-            anchors.fill: parent
-            onClicked: {
-                if (dataController) {
-                    dataController.manualDownloadReplayData()
+                Rectangle {
+                    anchors.top: parent.top
+                    anchors.right: parent.right
+                    anchors.margins: ScreenTools.defaultFontPixelWidth * 0.5
+                    width: ScreenTools.defaultFontPixelHeight * 0.75
+                    height: width
+                    radius: width * 0.5
+                    color: _thermalDecoding ? "lime" : (_thermalActive ? "gold" : "red")
+                    border.width: 1
+                    border.color: "black"
+                    z: 2
                 }
             }
         }
-    }
 
     }
 
@@ -227,21 +200,78 @@ Item {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: parent.top        
         z: QGroundControl.zOrderWidgets
-        visible: dataController && dataController.syncInProgress
+        visible: dataController ? dataController.syncInProgress : false
 
         QGCLabel {
-            text: "Syncing replay data..." + (dataController.syncInProgress ? " (" + dataController.syncProgressPct + "%)" : "")
+            text: dataController ? dataController.syncStatusText : ""
             Layout.alignment: Qt.AlignHCenter
         }
 
         ProgressBar {
             id: dcSyncProgressBar
             Layout.fillWidth: true
-            visible: dataController && dataController.syncInProgress
+            visible: dataController ? dataController.syncInProgress : false
             width: Math.min(parent.width * 0.8, ScreenTools.defaultFontPixelWidth * 70)
-            height: ScreenTools.defaultFontPixelHeight * 4
+            height: 64
+            from: 0
             to: 100
             value: dataController ? dataController.syncProgressPct : 0
+
+            MouseArea {
+                id: mouseArea
+                anchors.fill: parent
+                hoverEnabled: true
+            }
+
+            Item {
+                width: 16
+                height: 16
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                visible: mouseArea.containsMouse || cancelMouseArea.containsMouse
+
+                MouseArea {
+                    id: cancelMouseArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+
+                    onClicked: {
+                        if (dataController) {
+                            dataController.cancelSync()
+                        }
+                    }
+                }
+
+                Rectangle {
+                    id: badge
+                    anchors.fill: parent
+                    radius: width / 2
+                    color: "red"
+                    antialiasing: true
+
+                    // White X
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: parent.width * 0.58
+                        height: Math.max(3, parent.width * 0.09)
+                        radius: height / 2
+                        color: "white"
+                        rotation: 45
+                        antialiasing: true
+                    }
+
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: parent.width * 0.58
+                        height: Math.max(3, parent.width * 0.09)
+                        radius: height / 2
+                        color: "white"
+                        rotation: -45
+                        antialiasing: true
+                    }
+                }
+            }
         }
     }
 

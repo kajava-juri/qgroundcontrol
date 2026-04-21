@@ -69,6 +69,7 @@ public:
     Q_INVOKABLE void startRecording();
     Q_INVOKABLE void stopRecording();
     Q_INVOKABLE void manualDownloadReplayData();
+    Q_INVOKABLE void cancelSync();
     Q_INVOKABLE QVariant getSourceField(const QString& source, const QString& field) const;
     Q_INVOKABLE QVariantMap getSourceStatus(const QString& source) const;
 
@@ -151,6 +152,7 @@ private:
     QString _syncStatusText  = "";
     int     _syncFilesDone   = 0;
     int     _syncFilesTotal  = 0;
+    QString _syncSessionName;
 
     // Keep a pointer so we can cancel
     QProcess* _rsyncProcess = nullptr;
@@ -176,6 +178,7 @@ private:
     void _sendReplayDataResponse(bool dataAvailable, const QString &flightId);  // Send response to QGC
     void _downloadReplayData(const QString& remoteUsername, const QString& remoteHostName, const QString& remoteFilePath, const QString& localDirectoryPath);
     void _getReplayDataRemotePath();
+    void _notifySyncResult(bool success);
     
     QNetworkAccessManager _networkManager;
     QTimer _streamInfoTimer;            // Timer for periodic requests

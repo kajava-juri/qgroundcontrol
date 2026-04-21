@@ -23,6 +23,7 @@ Item {
     property bool showIndicator: true
     property var    _customSettings: QGroundControl.corePlugin.customSettings
     property var    _customVideoManager: QGroundControl.corePlugin.customVideoManager
+    property var    dataController: QGroundControl.corePlugin.dataCollectionController
 
     readonly property var _activeVehicle: QGroundControl.multiVehicleManager.activeVehicle
 
@@ -252,6 +253,30 @@ Item {
             contentComponent: Component {
                 ColumnLayout {
                     spacing: ScreenTools.defaultFontPixelHeight
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            implicitHeight: 40
+                            color: qgcPal.button
+                            radius: 4
+
+                            Text {
+                                
+                                anchors.centerIn: parent
+                                text: "Download Replay Data"
+                                color: qgcPal.buttonText
+                                font.pixelSize: ScreenTools.defaultFontPixelSize
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: {
+                                    if (dataController) {
+                                        dataController.manualDownloadReplayData()
+                                    }
+                                }
+                            }
+                        }
 
                     QGCLabel {
                         text:               qsTr("Video Stream Status")

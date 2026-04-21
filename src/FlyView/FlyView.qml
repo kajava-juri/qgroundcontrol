@@ -84,10 +84,6 @@ Item {
         bottomEdgeLeftInset:    _pipView.bottomEdgeLeftInset
     }
 
-    DataCollectionController {
-        id: dataCollectionController
-    }
-
     Connections {
         target: QGroundControl.corePlugin.customVideoManager
 
@@ -324,7 +320,6 @@ Item {
                 z:              QGroundControl.zOrderWidgets
                 visible:        _gridModeActive
                 planMasterController:  _planController
-                dataController: dataCollectionController
             }
 
         }
@@ -353,7 +348,6 @@ Item {
             mapControl:         _mapControl
             gridModeActive:     _gridModeActive  // Pass grid mode state
             visible:            !QGroundControl.videoManager.fullScreen && !_gridModeActive  // Hide in grid mode
-            dataController:   dataCollectionController
         }
         
 
