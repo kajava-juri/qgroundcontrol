@@ -475,7 +475,7 @@ Item {
     // - we export the width of this element as the leftEdgeCenterInset so that the map will recenter if the vehicle flys behind this element
     Rectangle {
         id: exampleRectangle
-        visible: true // to see this example, set this to true. To view insets, enable the insets viewer FlyView.qml
+        visible: false // to see this example, set this to true. To view insets, enable the insets viewer FlyView.qml
         anchors.left: parent.left
         anchors.top: parent.top
         anchors.bottom: parent.bottom
