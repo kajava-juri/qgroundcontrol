@@ -184,6 +184,7 @@ private:
     QTimer _streamInfoTimer;            // Timer for periodic requests
     int _streamInfoRetries{0};          // Counter for alternating between modern/legacy commands
     QSet<int> _pendingVidReadyStreamIds; // vid_ready events received before stream mapping/URI
+    bool _awaitingStopAck{false};       // Prevent new session until stop ACK arrives via TUNNEL
     QString _remoteDataFetchpath;
     QTimer _periodicSyncTimer;          // Timer for periodic data sync during collection
     bool _downloadInProgress{false};    // Track if rsync/cp is currently running

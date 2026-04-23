@@ -9,6 +9,7 @@
 #include <QtNetwork/QNetworkAccessManager>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
+#include <QtCore/QJsonValue>
 #include <QtCore/QStandardPaths>
 #include <QtCore/QDateTime>
 #include <QtCore/QFileInfo>
@@ -251,6 +252,12 @@ void DataCollectionController::_getStreamInfoHttp() {
 
 void DataCollectionController::startRecording() {
     qCDebug(DataCollectionControllerLog) << "Start recording invoked";
+    if (_awaitingStopAck) {
+        qCWarning(DataCollectionControllerLog) << "Cannot start recording yet - waiting for stop ACK via TUNNEL";
+        qgcApp()->showAppMessage(tr("Waiting for stop acknowledgement before starting a new session"));
+        return;
+    }
+
     if(!_isCollecting) {
         _pendingVidReadyStreamIds.clear();
         _vidReady = -1;
@@ -276,6 +283,8 @@ void DataCollectionController::startRecording() {
 void DataCollectionController::stopRecording() {
     qCDebug(DataCollectionControllerLog) << "Stop recording invoked";
     if (_isCollecting) {
+        _awaitingStopAck = true;
+
         // Send stop command first (before _handleCollectionEnd which will send END notification)
         _sendHttpRequest("stop");
         
@@ -581,6 +590,15 @@ void DataCollectionController::_handleNamedValue(const QString& name, const QVar
         return;
     }
 
+    if (name == "dcack_stp") {
+        if (_awaitingStopAck) {
+            _awaitingStopAck = false;
+            qCDebug(DataCollectionControllerLog) << "Received stop ACK via NAMED_VALUE_INT. New sessions are allowed.";
+        } else {
+            qCDebug(DataCollectionControllerLog) << "Received stop ACK via NAMED_VALUE_INT, but no ACK was pending.";
+        }
+    }
+
     if (name == "vid_count") {
         _vidCount = value.toInt();
         //emit vidCountChanged();
@@ -729,7 +747,7 @@ void DataCollectionController::_parseRsyncOutput(const QString& output)
         bool ok = false;
         int pct = pctStr.toInt(&ok);
         if (ok) {
-            qCDebug(DataCollectionControllerLog) << "Rsync progress:" << pct << "%";
+            // qCDebug(DataCollectionControllerLog) << "Rsync progress:" << pct << "%";
             _syncProgressPct = pct;
 
             const QString sessionName = _syncSessionName.isEmpty() ? QStringLiteral("session") : _syncSessionName;
@@ -774,6 +792,8 @@ void DataCollectionController::_downloadReplayData(const QString& remoteUsername
         qCDebug(DataCollectionControllerLog) << "Download already in progress, skipping duplicate request";
         return;
     }
+
+    _downloadInProgress = true;
     
     qCDebug(DataCollectionControllerLog) << "Transferring data from:" << remoteFilePath << "to:" << localDirectoryPath;
     _syncProgressPct = 0;
@@ -829,7 +849,7 @@ void DataCollectionController::_downloadReplayData(const QString& remoteUsername
         connect(rsyncProcess, &QProcess::readyReadStandardOutput, this, [this, rsyncProcess]() {
             while (rsyncProcess->canReadLine()) {
                 const QString line = QString::fromUtf8(rsyncProcess->readLine()).trimmed();
-                qCDebug(DataCollectionControllerLog) << "rsync output:" << line;
+                // qCDebug(DataCollectionControllerLog) << "rsync output:" << line;
                 _parseRsyncOutput(line);
             }
         });
