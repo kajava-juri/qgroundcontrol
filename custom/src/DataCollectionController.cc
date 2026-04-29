@@ -274,7 +274,7 @@ void DataCollectionController::startRecording() {
         }
         
         // Start periodic data sync for incremental backups
-        _startPeriodicDataSync();
+        // _startPeriodicDataSync();
         
         MAVLinkProtocol::instance()->startLogging();
     }
