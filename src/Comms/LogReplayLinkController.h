@@ -133,6 +133,7 @@ private:
     void _handleStatusTextMessage(const mavlink_message_t &message);
     void _setReplayDataStatus(ReplayDataStatus status, const QString &message = QString());
     void _notifyExternalComponent(bool sessionStarted);
+    void _onPlaybackAtEnd() const;
 
     bool _isPlaying = false;
     qreal _percentComplete = 0;

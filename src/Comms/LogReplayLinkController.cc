@@ -805,6 +805,8 @@ bool LogReplayLinkController::loadSessionByFlightId(const QString &flightId)
                 (void) connect(videoMgr, &CustomVideoManager::videoReplaySegmentsChanged,
                     this, &LogReplayLinkController::videoReplaySegmentsChanged,
                     Qt::UniqueConnection);
+
+                connect(link, &LogReplayLink::playbackAtEnd, this, &LogReplayLinkController::_onPlaybackAtEnd);
                 
                 // Notify QML that segments are ready (videos already loaded above)
                 emit videoReplaySegmentsChanged();
@@ -847,4 +849,10 @@ QString LogReplayLinkController::_findTlogByFlightId(const QString &flightId)
     
     qCWarning(LogReplayLinkControllerLog) << "Tlog not found for flight_id:" << flightId << "in" << telemetryDir;
     return QString();
+}
+
+void LogReplayLinkController::_onPlaybackAtEnd() const
+{
+    qCDebug(LogReplayLinkControllerLog) << "Playback reached end, looping back to start";
+    setIsPlaying(true);
 }
