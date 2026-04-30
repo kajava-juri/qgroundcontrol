@@ -252,11 +252,11 @@ void DataCollectionController::_getStreamInfoHttp() {
 
 void DataCollectionController::startRecording() {
     qCDebug(DataCollectionControllerLog) << "Start recording invoked";
-    if (_awaitingStopAck) {
-        qCWarning(DataCollectionControllerLog) << "Cannot start recording yet - waiting for stop ACK via TUNNEL";
-        qgcApp()->showAppMessage(tr("Waiting for stop acknowledgement before starting a new session"));
-        return;
-    }
+    // if (_awaitingStopAck) {
+    //     qCWarning(DataCollectionControllerLog) << "Cannot start recording yet - waiting for stop ACK via TUNNEL";
+    //     qgcApp()->showAppMessage(tr("Waiting for stop acknowledgement before starting a new session"));
+    //     return;
+    // }
 
     if(!_isCollecting) {
         _pendingVidReadyStreamIds.clear();
