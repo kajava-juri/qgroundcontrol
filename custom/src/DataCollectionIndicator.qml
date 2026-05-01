@@ -359,6 +359,29 @@ Item {
                         }
                     }
 
+                    Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: 40
+                        color: qgcPal.button
+                        radius: 4
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "Restart VOXL Streamer"
+                            color: qgcPal.buttonText
+                            font.pixelSize: ScreenTools.defaultFontPixelSize
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: {
+                                if (dataController) {
+                                    dataController.requestVoxlStreamerRestart()
+                                }
+                            }
+                        }
+                    }
+
                     QGCLabel {
                         text: _activeVehicle ? qsTr("Vehicle Connected: ") + _activeVehicle.id : qsTr("No Vehicle")
                         Layout.alignment: Qt.AlignHCenter

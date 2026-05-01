@@ -300,6 +300,11 @@ Q_INVOKABLE void DataCollectionController::manualDownloadReplayData()
     _getReplayDataRemotePath();
 }
 
+Q_INVOKABLE void DataCollectionController::requestVoxlStreamerRestart()
+{
+    _sendHttpRequest("restart_voxl_streamer");
+}
+
 void DataCollectionController::cancelSync()
 {
     if (!_syncInProgress || !_rsyncProcess) {
@@ -698,18 +703,21 @@ void DataCollectionController::_handleCollectionEnd()
     // _stopPeriodicDataSync();
     
     // Explicitly stop all video streams to prevent timeout/resource leaks
-    CustomPlugin* plugin = qobject_cast<CustomPlugin*>(QGCCorePlugin::instance());
-    if (plugin && plugin->customVideoManager()) {
-        CustomVideoManager* videoManager = plugin->customVideoManager();
-        qCDebug(DataCollectionControllerLog) << "Stopping all video streams";
+    // === Persistent stream update
+    // With persistent streaming approach, streams are not stopped and can still be decoded
+    // ===
+    // CustomPlugin* plugin = qobject_cast<CustomPlugin*>(QGCCorePlugin::instance());
+    // if (plugin && plugin->customVideoManager()) {
+    //     CustomVideoManager* videoManager = plugin->customVideoManager();
+    //     qCDebug(DataCollectionControllerLog) << "Stopping all video streams";
         
-        for (int i = 0; i < CustomVideoManager::STREAM_COUNT; i++) {
-            videoManager->stopStream(i);
-            videoManager->setStreamUri(i, "");  // Clear URIs to prevent auto-restart
-        }
-    } else {
-        qCWarning(DataCollectionControllerLog) << "Could not access CustomVideoManager for stream cleanup";
-    }
+    //     for (int i = 0; i < CustomVideoManager::STREAM_COUNT; i++) {
+    //         videoManager->stopStream(i);
+    //         videoManager->setStreamUri(i, "");  // Clear URIs to prevent auto-restart
+    //     }
+    // } else {
+    //     qCWarning(DataCollectionControllerLog) << "Could not access CustomVideoManager for stream cleanup";
+    // }
 
     
     // Update recording state

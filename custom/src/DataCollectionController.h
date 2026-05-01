@@ -69,6 +69,7 @@ public:
     Q_INVOKABLE void startRecording();
     Q_INVOKABLE void stopRecording();
     Q_INVOKABLE void manualDownloadReplayData();
+    Q_INVOKABLE void requestVoxlStreamerRestart();
     Q_INVOKABLE void cancelSync();
     Q_INVOKABLE QVariant getSourceField(const QString& source, const QString& field) const;
     Q_INVOKABLE QVariantMap getSourceStatus(const QString& source) const;

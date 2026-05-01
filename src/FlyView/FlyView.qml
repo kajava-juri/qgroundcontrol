@@ -185,7 +185,7 @@ Item {
 
             Rectangle {
                 anchors.top: parent.top
-                anchors.left: parent.left
+                anchors.right: parent.right
                 anchors.margins: ScreenTools.defaultFontPixelWidth * 0.5
                 width: ScreenTools.defaultFontPixelHeight * 0.75
                 height: width
