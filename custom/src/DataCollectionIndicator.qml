@@ -254,30 +254,6 @@ Item {
                 ColumnLayout {
                     spacing: ScreenTools.defaultFontPixelHeight
 
-                        Rectangle {
-                            Layout.fillWidth: true
-                            implicitHeight: 40
-                            color: qgcPal.button
-                            radius: 4
-
-                            Text {
-                                
-                                anchors.centerIn: parent
-                                text: "Download Replay Data"
-                                color: qgcPal.buttonText
-                                font.pixelSize: ScreenTools.defaultFontPixelSize
-                            }
-
-                            MouseArea {
-                                anchors.fill: parent
-                                onClicked: {
-                                    if (dataController) {
-                                        dataController.manualDownloadReplayData()
-                                    }
-                                }
-                            }
-                        }
-
                     QGCLabel {
                         text:               qsTr("Video Stream Status")
                         font.pointSize:     ScreenTools.largeFontPointSize
@@ -355,6 +331,30 @@ Item {
                                 wrapMode: Text.WrapAnywhere
                                 text: qsTr("Thermal URI: ") + (_thermalUri !== "" ? _thermalUri : qsTr("N/A"))
                                 font.pointSize: ScreenTools.smallFontPointSize
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: 40
+                        color: qgcPal.button
+                        radius: 4
+
+                        Text {
+                            
+                            anchors.centerIn: parent
+                            text: "Download Replay Data"
+                            color: qgcPal.buttonText
+                            font.pixelSize: ScreenTools.defaultFontPixelSize
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: {
+                                if (dataController) {
+                                    dataController.manualDownloadReplayData()
+                                }
                             }
                         }
                     }
