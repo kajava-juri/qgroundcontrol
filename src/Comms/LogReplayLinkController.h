@@ -156,8 +156,8 @@ private:
 
     struct SessionMetadata {
         QString flightId;
-        uint32_t dcDurationSecs;
-        uint32_t tlogDurationSecs;
+        quint64 dcDurationSecs;
+        quint64 tlogDurationSecs;
         bool hasVideo;
         bool hasTlog;
         QString tlogFilePath;

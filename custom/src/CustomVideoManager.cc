@@ -1328,7 +1328,7 @@ gboolean CustomVideoManager::_onBusMessage(GstBus* bus, GstMessage* message, gpo
                                         static_cast<GstSeekFlags>(GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_KEY_UNIT),
                                         0)) {
                 qCDebug(CustomVideoManagerLog) << "Replay stream" << idx << "seeked to start";
-                gst_element_set_state(pipeline, GST_STATE_PAUSED);
+                // gst_element_set_state(pipeline, GST_STATE_PAUSED);
                 
                 // Reset readyToPlay for videos with negative offsets
                 if (manager->_replay.streams[idx].offsetMs < 0) {
@@ -1336,6 +1336,8 @@ gboolean CustomVideoManager::_onBusMessage(GstBus* bus, GstMessage* message, gpo
                     qCDebug(CustomVideoManagerLog) << "Replay stream" << idx 
                                                     << "reset readyToPlay (negative offset video looped)";
                 }
+                gst_element_set_state(pipeline, GST_STATE_PLAYING);
+
             } else {
                 qCWarning(CustomVideoManagerLog) << "Replay stream" << idx << "failed to seek";
             }

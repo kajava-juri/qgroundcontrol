@@ -34,6 +34,8 @@ DataCollectionController::DataCollectionController(QObject* parent)
             _stopPeriodicStreamInfoRequest();
         }
     });
+
+    _startPeriodicStreamInfoRequest();
 }
 
 void DataCollectionController::toggleRecording() {
@@ -60,10 +62,10 @@ void DataCollectionController::_handleStreamInfo(const QString& streamName, cons
         return;
     }
     // if data collection is inactive, do not act. Current bug where periodic stream info request's response was received after collection ended and calling setStreamUri causes a stream to restart and GStreamer throws errors.
-    if (!plugin->dataCollectionController()->isCollecting()) {
-        qCWarning(DataCollectionControllerLog) << "Data collection not active - ignoring stream info";
-        return;
-    }
+    // if (!plugin->dataCollectionController()->isCollecting()) {
+    //     qCWarning(DataCollectionControllerLog) << "Data collection not active - ignoring stream info";
+    //     return;
+    // }
     
     CustomVideoManager* videoManager = plugin->customVideoManager();
     qCDebug(DataCollectionControllerLog) << "CustomVideoManager found, StreamNames size:" << CustomVideoManager::StreamNames.size();
@@ -955,10 +957,9 @@ void DataCollectionController::_startPeriodicStreamInfoRequest()
     
     // Make initial request immediately, then start periodic timer
     QTimer::singleShot(1000, this, [this]() {
-        if (_vehicle) {  // Check vehicle still exists
-            _requestStreamInfo();
-            _streamInfoTimer.start(STREAM_INFO_POLL_INTERVAL_MS);
-        }
+        _requestStreamInfo();
+        _streamInfoTimer.start(STREAM_INFO_POLL_INTERVAL_MS);
+    
     });
 }
 
@@ -1013,10 +1014,10 @@ void DataCollectionController::_sendReadySignalToDataCollector()
 // //-----------------------------------------------------------------------------
 void DataCollectionController::_requestStreamInfo()
 {
-    if (!_vehicle) {
-        qCWarning(DataCollectionControllerLog) << "_requestStreamInfo: No active vehicle";
-        return;
-    }
+    // if (!_vehicle) {
+    //     qCWarning(DataCollectionControllerLog) << "_requestStreamInfo: No active vehicle";
+    //     return;
+    // }
     
     qCDebug(DataCollectionControllerLog) << "_requestStreamInfo() - retries:" << _streamInfoRetries;
     
