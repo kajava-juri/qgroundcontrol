@@ -211,6 +211,8 @@ Rectangle {
             property real totalMs: controller.totalDurationSecs * 1000
             
             background: Item {
+                clip: true
+                
                 Repeater {
                     model: controller.videoReplaySegments
                     
@@ -218,14 +220,15 @@ Rectangle {
                         // Negative offset means video starts at log time = -start
                         property real segmentStartMs: -modelData.start
                         property real segmentEndMs: segmentStartMs + modelData.duration
+                        property real visibleStartMs: Math.max(0, segmentStartMs)
                         property real visibleEndMs: Math.min(segmentEndMs, slider.totalMs)
                         
-                        x: slider.leftPadding + (slider.totalMs > 0 ? (segmentStartMs / slider.totalMs) * slider.availableWidth : 0)
+                        x: slider.leftPadding + (slider.totalMs > 0 ? (visibleStartMs / slider.totalMs) * slider.availableWidth : 0)
                         y: slider.topPadding + slider.availableHeight / 2 - height / 2
-                        width: slider.totalMs > 0 ? ((visibleEndMs - segmentStartMs) / slider.totalMs) * slider.availableWidth : 0
+                        width: slider.totalMs > 0 ? ((visibleEndMs - visibleStartMs) / slider.totalMs) * slider.availableWidth : 0
                         height: 4
                         color: modelData.color
-                        visible: slider.totalMs > 0 && segmentStartMs < slider.totalMs
+                        visible: slider.totalMs > 0 && visibleStartMs < slider.totalMs && visibleEndMs > 0
                     }
                 }
             }

@@ -1110,6 +1110,7 @@ void CustomVideoManager::_onReplayAppSrcNeedData(GstElement* appsrc, guint lengt
                 return;
             }
         }
+        gst_buffer_unref(buffer);
 
         rs.nextFrameMetadataIndex++;
         pushedFrames++;

@@ -394,7 +394,7 @@ LogReplayLinkController::VideoStreamInfo LogReplayLinkController::_processVideoP
                 // Calculate offset using first frame's timestamp
                 if (tlogStartUSecs > 0) {
                     const quint64 frameStartUSecs = frameTimestampNs / 1000;  // Convert ns to us
-                    streamInfo.offsetMs = static_cast<qint64>((frameStartUSecs - tlogStartUSecs) / 1000);
+                    streamInfo.offsetMs = (static_cast<qint64>(frameStartUSecs) - static_cast<qint64>(tlogStartUSecs)) / 1000;
                 }
 
                 qCDebug(LogReplayLinkControllerLog) << "Frame-based video offset:" << streamInfo.offsetMs << "ms"
@@ -644,7 +644,7 @@ bool LogReplayLinkController::loadFromMetadataFolder(const QString &metadataFold
             // For file-based videos, use the metadata offset if not calculated from directory
             if (!streamInfo.isDirectory && tlogStartUSecs > 0 && streamStartUnix > 0) {
                 quint64 streamStartUSecs = static_cast<quint64>(streamStartUnix * 1000000.0);
-                streamInfo.offsetMs = static_cast<qint64>((streamStartUSecs - tlogStartUSecs) / 1000);
+                streamInfo.offsetMs = (static_cast<qint64>(streamStartUSecs) - static_cast<qint64>(tlogStartUSecs)) / 1000;
                 qCDebug(LogReplayLinkControllerLog) << "File-based video offset:" << streamInfo.offsetMs << "ms"
                                                     << "(stream:" << streamStartUSecs << "usecs)";
             }
