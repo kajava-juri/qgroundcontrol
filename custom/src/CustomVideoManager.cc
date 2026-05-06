@@ -1637,3 +1637,66 @@ QVariantList CustomVideoManager::videoReplaySegments() const {
 
     return segments;
 }
+
+void CustomVideoManager::restartAllStreamsToBeginning()
+{
+    if (!_replay.active) {
+        return;
+    }
+
+    qCDebug(CustomVideoManagerLog) << "Restarting all replay streams to position 0";
+
+    for (int i = 0; i < REPLAY_STREAM_COUNT; i++) {
+        ReplayStreamInfo& rs = _replay.streams[i];
+
+        if (!rs.pipeline || !rs.loaded) {
+            qCDebug(CustomVideoManagerLog) << "Stream" << i << "not loaded - skipping";
+            continue;
+        }
+
+        // Pause before seeking to avoid appsrc flushing race
+        gst_element_set_state(rs.pipeline, GST_STATE_PAUSED);
+
+        qint64 initialPosMs = qMax(static_cast<qint64>(0), _replay.streams[i].offsetMs);
+
+        if (initialPosMs > 0) {
+            gboolean seekReault = gst_element_seek_simple(_replay.streams[i].pipeline, GST_FORMAT_TIME,
+                    static_cast<GstSeekFlags>(GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_KEY_UNIT),
+                    initialPosMs * GST_MSECOND);
+                qCDebug(CustomVideoManagerLog) << "Stream" << i << "seeked to initial position" << initialPosMs << "ms";
+
+            if (!seekResult) {
+                qCWarning(CustomVideoManagerLog) << "Seek to 0 failed for stream" << i;
+            } else {
+                qCDebug(CustomVideoManagerLog) << "Stream" << i << "seeked to 0";
+            }
+        }
+        
+
+        rs.lastSeekTimeMs = 0;
+
+        // Streams with a positive offset are immediately ready at position 0;
+        // negative-offset streams need to wait for the tlog to catch up again.
+        rs.readyToPlay = (rs.offsetMs >= 0);
+    }
+
+    // Reset tlog time reference so seekToPosition calculations stay consistent
+    _replay.currentTlogTimeSecs = 0;
+
+    // Resume playback on all ready streams if we were playing
+    if (_replay.isPlaying) {
+        for (int i = 0; i < REPLAY_STREAM_COUNT; i++) {
+            ReplayStreamInfo& rs = _replay.streams[i];
+            if (rs.pipeline && rs.loaded && rs.readyToPlay) {
+                gst_element_set_state(rs.pipeline, GST_STATE_PLAYING);
+                qCDebug(CustomVideoManagerLog) << "Stream" << i << "resumed PLAYING after restart";
+            }
+        }
+
+        // Kick off the delayed-video timer for any streams that aren't ready yet
+        if (_replay.delayedVideoTimer && !_replay.delayedVideoTimer->isActive()) {
+            _replay.delayedVideoTimer->start();
+            qCDebug(CustomVideoManagerLog) << "Delayed video timer started for negative-offset streams";
+        }
+    }
+}
