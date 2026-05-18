@@ -57,6 +57,7 @@ public:
 
     void init(QQuickWindow* mainWindow);
     void clearAllStreamInfo();
+    void restartAllStreamsToBeginning();
     Q_INVOKABLE void reinitializeWidgets(bool gridMode = false);  // Re-find widgets after mode change
 
     friend class FinishCustomVideoInitialization;

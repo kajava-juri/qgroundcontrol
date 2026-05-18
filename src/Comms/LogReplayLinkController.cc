@@ -807,6 +807,9 @@ bool LogReplayLinkController::loadSessionByFlightId(const QString &flightId)
                     Qt::UniqueConnection);
 
                 connect(link, &LogReplayLink::playbackAtEnd, this, &LogReplayLinkController::_onPlaybackAtEnd);
+                connect(link, &LogReplayLink::playbackAtEnd, this, [videoMgr]() {
+                    videoMgr->restartAllStreamsToBeginning();
+                });
                 
                 // Notify QML that segments are ready (videos already loaded above)
                 emit videoReplaySegmentsChanged();
