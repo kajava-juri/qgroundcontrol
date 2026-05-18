@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 BUILD_TOOLS="$ANDROID_SDK_ROOT/build-tools/$(ls $ANDROID_SDK_ROOT/build-tools | sort -V | tail -n1)"
-KS_PATH="./qgc-release.keystore"
+KS_PATH="$1"
 
 keystore_cmd="keytool -genkeypair -v \
   -keystore qgc-release.keystore \
