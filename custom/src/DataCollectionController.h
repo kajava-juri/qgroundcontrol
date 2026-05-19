@@ -31,6 +31,14 @@ class DataCollectionController : public QObject
     Q_PROPERTY(double rtkLon READ rtkLon NOTIFY rtkLonChanged)
     Q_PROPERTY(double rtkAlt READ rtkAlt NOTIFY rtkAltChanged)
 
+    // Replay specific
+    Q_PROPERTY(bool   syncInProgress    READ syncInProgress    NOTIFY syncStatusChanged)
+    Q_PROPERTY(int    syncProgressPct   READ syncProgressPct   NOTIFY syncStatusChanged)
+    Q_PROPERTY(QString syncStatusText   READ syncStatusText    NOTIFY syncStatusChanged)
+    Q_PROPERTY(int    syncFilesDone     READ syncFilesDone     NOTIFY syncStatusChanged)
+    Q_PROPERTY(int    syncFilesTotal    READ syncFilesTotal    NOTIFY syncStatusChanged)
+
+
 public:
     DataCollectionController(QObject* parent = nullptr);
     bool isCollecting() const {return _isCollecting;}
@@ -51,9 +59,18 @@ public:
     double rtkLon() const {return _rtkLon;}
     double rtkAlt() const {return _rtkAlt;}
 
+    bool   syncInProgress() const { return _syncInProgress; }
+    int    syncProgressPct() const { return _syncProgressPct; }
+    QString syncStatusText() const { return _syncStatusText; }
+    int    syncFilesDone() const { return _syncFilesDone; }
+    int    syncFilesTotal() const { return _syncFilesTotal; }
+
     Q_INVOKABLE void toggleRecording();
     Q_INVOKABLE void startRecording();
     Q_INVOKABLE void stopRecording();
+    Q_INVOKABLE void manualDownloadReplayData();
+    Q_INVOKABLE void requestVoxlStreamerRestart();
+    Q_INVOKABLE void cancelSync();
     Q_INVOKABLE QVariant getSourceField(const QString& source, const QString& field) const;
     Q_INVOKABLE QVariantMap getSourceStatus(const QString& source) const;
 
@@ -96,6 +113,10 @@ signals:
     void rtkLonChanged();
     void rtkAltChanged();
 
+    // Replay sync status signal
+    void syncStatusChanged();
+    void syncCompleted(bool success);
+
 private slots:
     void _onActiveVehicleChanged(Vehicle* vehicle);
     void _requestStreamInfo();          // Request VIDEO_STREAM_INFORMATION
@@ -125,6 +146,19 @@ private:
     double _rtkLat{0.0};
     double _rtkLon{0.0};
     double _rtkAlt{0.0};
+
+    // Replay sync status variables
+    bool    _syncInProgress  = false;
+    int     _syncProgressPct = 0;
+    QString _syncStatusText  = "";
+    int     _syncFilesDone   = 0;
+    int     _syncFilesTotal  = 0;
+    QString _syncSessionName;
+
+    // Keep a pointer so we can cancel
+    QProcess* _rsyncProcess = nullptr;
+
+    void _parseRsyncOutput(const QString& line);
     
     // Per-source status tracking: source name -> {field -> value}
     QMap<QString, QVariantMap> _sourceStatus;
@@ -145,11 +179,13 @@ private:
     void _sendReplayDataResponse(bool dataAvailable, const QString &flightId);  // Send response to QGC
     void _downloadReplayData(const QString& remoteUsername, const QString& remoteHostName, const QString& remoteFilePath, const QString& localDirectoryPath);
     void _getReplayDataRemotePath();
+    void _notifySyncResult(bool success);
     
     QNetworkAccessManager _networkManager;
     QTimer _streamInfoTimer;            // Timer for periodic requests
     int _streamInfoRetries{0};          // Counter for alternating between modern/legacy commands
     QSet<int> _pendingVidReadyStreamIds; // vid_ready events received before stream mapping/URI
+    bool _awaitingStopAck{false};       // Prevent new session until stop ACK arrives via TUNNEL
     QString _remoteDataFetchpath;
     QTimer _periodicSyncTimer;          // Timer for periodic data sync during collection
     bool _downloadInProgress{false};    // Track if rsync/cp is currently running
@@ -158,7 +194,7 @@ private:
     void _stopPeriodicDataSync();       // Stop periodic backup sync
     
     static constexpr int STREAM_INFO_POLL_INTERVAL_MS = 5000;  // Poll every 5 seconds
-    static constexpr int DATA_SYNC_INTERVAL_MS = 30000;         // Sync every 30 seconds
+    static constexpr int DATA_SYNC_INTERVAL_MS = 15000;         // Sync every 30 seconds
     static constexpr int FINAL_SYNC_DELAY_MS = 3000;            // Wait 3s for Python to finalize metadata
 };
 

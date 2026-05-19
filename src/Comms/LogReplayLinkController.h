@@ -133,6 +133,7 @@ private:
     void _handleStatusTextMessage(const mavlink_message_t &message);
     void _setReplayDataStatus(ReplayDataStatus status, const QString &message = QString());
     void _notifyExternalComponent(bool sessionStarted);
+    void _onPlaybackAtEnd() const;
 
     bool _isPlaying = false;
     qreal _percentComplete = 0;
@@ -155,8 +156,8 @@ private:
 
     struct SessionMetadata {
         QString flightId;
-        uint32_t dcDurationSecs;
-        uint32_t tlogDurationSecs;
+        quint64 dcDurationSecs;
+        quint64 tlogDurationSecs;
         bool hasVideo;
         bool hasTlog;
         QString tlogFilePath;

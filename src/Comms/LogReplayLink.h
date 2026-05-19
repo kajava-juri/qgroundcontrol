@@ -82,6 +82,7 @@ signals:
     void playbackPercentCompleteChanged(qreal percentComplete);
     void currentLogTimeSecs(uint32_t secs);
     void playheadMoved(uint32_t secs);
+    void playbackReset();
 
 public slots:
     void setup();
@@ -164,6 +165,7 @@ private slots:
 
 private:
     bool _connect() override;
+    void _onPlaybackReset();
 
     const LogReplayConfiguration *_logReplayConfig = nullptr;
     LogReplayWorker *_worker = nullptr;

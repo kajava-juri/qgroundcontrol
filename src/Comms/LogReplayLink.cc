@@ -239,6 +239,8 @@ void LogReplayWorker::_resetPlaybackToBeginning()
     _playbackStartTimeMSecs = 0;
     _playbackStartLogTimeUSecs = 0;
     _logCurrentTimeUSecs = _logStartTimeUSecs;
+
+    emit playheadMoved(0.0);
 }
 
 void LogReplayWorker::_readNextLogEntry()
@@ -435,6 +437,13 @@ LogReplayLink::LogReplayLink(SharedLinkConfigurationPtr &config, QObject *parent
     (void) connect(_worker, &LogReplayWorker::playheadMoved, this, &LogReplayLink::playheadMoved, Qt::QueuedConnection);
     (void) connect(_worker, &LogReplayWorker::disconnected, this, &LogReplayLink::disconnected, Qt::QueuedConnection);
 
+    (void)connect(_worker, &LogReplayWorker::playbackReset, this, &LogReplayLink::_onPlaybackReset,
+                  Qt::QueuedConnection);
+
+    (void)connect(
+        _worker, &LogReplayWorker::playbackAtEnd, this, &LogReplayLink::_onPlaybackReset,
+        Qt::QueuedConnection);
+
     _workerThread->start();
 }
 
@@ -522,4 +531,9 @@ void LogReplayLink::movePlayhead(qreal percentComplete)
 quint64 LogReplayLink::logStartTimeUSecs() const
 {
     return _worker ? _worker->logStartTimeUSecs() : 0;
+}
+
+void LogReplayLink::_onPlaybackReset()
+{
+    emit playbackAtEnd();
 }

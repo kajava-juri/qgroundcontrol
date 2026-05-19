@@ -9,8 +9,10 @@
 #include <QtNetwork/QNetworkAccessManager>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
+#include <QtCore/QJsonValue>
 #include <QtCore/QStandardPaths>
 #include <QtCore/QDateTime>
+#include <QtCore/QFileInfo>
 #include "LogReplayLinkController.h"
 
 QGC_LOGGING_CATEGORY(DataCollectionControllerLog, "Custom.DataCollectionController")
@@ -32,6 +34,8 @@ DataCollectionController::DataCollectionController(QObject* parent)
             _stopPeriodicStreamInfoRequest();
         }
     });
+
+    _startPeriodicStreamInfoRequest();
 }
 
 void DataCollectionController::toggleRecording() {
@@ -58,10 +62,10 @@ void DataCollectionController::_handleStreamInfo(const QString& streamName, cons
         return;
     }
     // if data collection is inactive, do not act. Current bug where periodic stream info request's response was received after collection ended and calling setStreamUri causes a stream to restart and GStreamer throws errors.
-    if (!plugin->dataCollectionController()->isCollecting()) {
-        qCWarning(DataCollectionControllerLog) << "Data collection not active - ignoring stream info";
-        return;
-    }
+    // if (!plugin->dataCollectionController()->isCollecting()) {
+    //     qCWarning(DataCollectionControllerLog) << "Data collection not active - ignoring stream info";
+    //     return;
+    // }
     
     CustomVideoManager* videoManager = plugin->customVideoManager();
     qCDebug(DataCollectionControllerLog) << "CustomVideoManager found, StreamNames size:" << CustomVideoManager::StreamNames.size();
@@ -250,6 +254,12 @@ void DataCollectionController::_getStreamInfoHttp() {
 
 void DataCollectionController::startRecording() {
     qCDebug(DataCollectionControllerLog) << "Start recording invoked";
+    // if (_awaitingStopAck) {
+    //     qCWarning(DataCollectionControllerLog) << "Cannot start recording yet - waiting for stop ACK via TUNNEL";
+    //     qgcApp()->showAppMessage(tr("Waiting for stop acknowledgement before starting a new session"));
+    //     return;
+    // }
+
     if(!_isCollecting) {
         _pendingVidReadyStreamIds.clear();
         _vidReady = -1;
@@ -266,7 +276,7 @@ void DataCollectionController::startRecording() {
         }
         
         // Start periodic data sync for incremental backups
-        _startPeriodicDataSync();
+        // _startPeriodicDataSync();
         
         MAVLinkProtocol::instance()->startLogging();
     }
@@ -275,11 +285,39 @@ void DataCollectionController::startRecording() {
 void DataCollectionController::stopRecording() {
     qCDebug(DataCollectionControllerLog) << "Stop recording invoked";
     if (_isCollecting) {
+        _awaitingStopAck = true;
+
         // Send stop command first (before _handleCollectionEnd which will send END notification)
         _sendHttpRequest("stop");
         
         // Perform full cleanup (sends END notification, stops streams, clears URIs, updates state)
         _handleCollectionEnd();
+    }
+}
+
+Q_INVOKABLE void DataCollectionController::manualDownloadReplayData()
+{
+    _getReplayDataRemotePath();
+}
+
+Q_INVOKABLE void DataCollectionController::requestVoxlStreamerRestart()
+{
+    _sendHttpRequest("restart_voxl_streamer");
+}
+
+void DataCollectionController::cancelSync()
+{
+    if (!_syncInProgress || !_rsyncProcess) {
+        qCDebug(DataCollectionControllerLog) << "cancelSync: no active sync process";
+        return;
+    }
+
+    qCDebug(DataCollectionControllerLog) << "Cancelling active sync process";
+    _syncStatusText = "Sync cancelled";
+    emit syncStatusChanged();
+
+    if (_rsyncProcess->state() != QProcess::NotRunning) {
+        _rsyncProcess->kill();
     }
 }
 
@@ -559,6 +597,15 @@ void DataCollectionController::_handleNamedValue(const QString& name, const QVar
         return;
     }
 
+    if (name == "dcack_stp") {
+        if (_awaitingStopAck) {
+            _awaitingStopAck = false;
+            qCDebug(DataCollectionControllerLog) << "Received stop ACK via NAMED_VALUE_INT. New sessions are allowed.";
+        } else {
+            qCDebug(DataCollectionControllerLog) << "Received stop ACK via NAMED_VALUE_INT, but no ACK was pending.";
+        }
+    }
+
     if (name == "vid_count") {
         _vidCount = value.toInt();
         //emit vidCountChanged();
@@ -653,33 +700,25 @@ void DataCollectionController::_handleCollectionEnd()
     _stopPeriodicStreamInfoRequest();
     
     // Stop periodic data sync
-    _stopPeriodicDataSync();
+    // _stopPeriodicDataSync();
     
     // Explicitly stop all video streams to prevent timeout/resource leaks
-    CustomPlugin* plugin = qobject_cast<CustomPlugin*>(QGCCorePlugin::instance());
-    if (plugin && plugin->customVideoManager()) {
-        CustomVideoManager* videoManager = plugin->customVideoManager();
-        qCDebug(DataCollectionControllerLog) << "Stopping all video streams";
+    // === Persistent stream update
+    // With persistent streaming approach, streams are not stopped and can still be decoded
+    // ===
+    // CustomPlugin* plugin = qobject_cast<CustomPlugin*>(QGCCorePlugin::instance());
+    // if (plugin && plugin->customVideoManager()) {
+    //     CustomVideoManager* videoManager = plugin->customVideoManager();
+    //     qCDebug(DataCollectionControllerLog) << "Stopping all video streams";
         
-        for (int i = 0; i < CustomVideoManager::STREAM_COUNT; i++) {
-            videoManager->stopStream(i);
-            videoManager->setStreamUri(i, "");  // Clear URIs to prevent auto-restart
-        }
-    } else {
-        qCWarning(DataCollectionControllerLog) << "Could not access CustomVideoManager for stream cleanup";
-    }
+    //     for (int i = 0; i < CustomVideoManager::STREAM_COUNT; i++) {
+    //         videoManager->stopStream(i);
+    //         videoManager->setStreamUri(i, "");  // Clear URIs to prevent auto-restart
+    //     }
+    // } else {
+    //     qCWarning(DataCollectionControllerLog) << "Could not access CustomVideoManager for stream cleanup";
+    // }
 
-    // Delay final sync to allow Python time to finalize metadata files
-    // Without this delay, rsync starts immediately and may miss the final metadata.json
-    qCDebug(DataCollectionControllerLog) << "Scheduling final data sync in" << FINAL_SYNC_DELAY_MS << "ms";
-    QTimer::singleShot(FINAL_SYNC_DELAY_MS, this, [this]() {
-        if (!_downloadInProgress) {
-            qCDebug(DataCollectionControllerLog) << "Starting final data sync";
-            _getReplayDataRemotePath();
-        } else {
-            qCDebug(DataCollectionControllerLog) << "Download still in progress, final sync will happen after current one completes";
-        }
-    });
     
     // Update recording state
     if (_isCollecting) {
@@ -693,6 +732,69 @@ void DataCollectionController::_handleCollectionEnd()
     qCDebug(DataCollectionControllerLog) << "Collection cleanup completed";
 }
 
+void DataCollectionController::_parseRsyncOutput(const QString& output)
+{
+    // Example: 105.45M  13%  602.83kB/s    0:02:50 (xfr#495, ir-chk=1020/3825)
+    static QRegularExpression pctRe(R"(\b(\d+)%)");
+    static QRegularExpression toChkRe(R"((?:to|ir)-chk=(\d+)\/(\d+))");
+
+    QRegularExpressionMatch toChkM = toChkRe.match(output);
+    if (toChkM.hasMatch()) {
+        bool leftOk = false;
+        bool totalOk = false;
+        const int filesLeft = toChkM.captured(1).toInt(&leftOk);
+        const int filesTotal = toChkM.captured(2).toInt(&totalOk);
+
+        if (leftOk && totalOk && filesTotal >= 0) {
+            _syncFilesTotal = filesTotal;
+            _syncFilesDone = qMax(0, filesTotal - filesLeft);
+        }
+    }
+
+    QRegularExpressionMatch pctM = pctRe.match(output);
+    if (pctM.hasMatch()) {
+        QString pctStr = pctM.captured(1);
+        bool ok = false;
+        int pct = pctStr.toInt(&ok);
+        if (ok) {
+            // qCDebug(DataCollectionControllerLog) << "Rsync progress:" << pct << "%";
+            _syncProgressPct = pct;
+
+            const QString sessionName = _syncSessionName.isEmpty() ? QStringLiteral("session") : _syncSessionName;
+            if (_syncFilesTotal > 0) {
+                const int filesLeft = qMax(0, _syncFilesTotal - _syncFilesDone);
+                _syncStatusText = QString("Syncing %1: %2% (%3/%4 files done, %5 left)")
+                                      .arg(sessionName)
+                                      .arg(_syncProgressPct)
+                                      .arg(_syncFilesDone)
+                                      .arg(_syncFilesTotal)
+                                      .arg(filesLeft);
+            } else {
+                _syncStatusText = QString("Syncing %1: %2%").arg(sessionName).arg(_syncProgressPct);
+            }
+
+            emit syncStatusChanged();
+        }
+    }
+}
+
+void DataCollectionController::_notifySyncResult(bool success)
+{
+    if (success) {
+        // Periodic sync runs in the background while collecting; avoid repetitive success popups.
+        if (_isCollecting && _periodicSyncTimer.isActive()) {
+            return;
+        }
+
+        const QString sessionName = _syncSessionName.isEmpty() ? QStringLiteral("session") : _syncSessionName;
+        qgcApp()->showAppMessage(tr("Sync finished for %1").arg(sessionName));
+        return;
+    }
+
+    const QString sessionName = _syncSessionName.isEmpty() ? QStringLiteral("session") : _syncSessionName;
+    qgcApp()->showAppMessage(tr("Sync failed for %1. Check connection and logs.").arg(sessionName));
+}
+
 void DataCollectionController::_downloadReplayData(const QString& remoteUsername, const QString& remoteHostName, const QString& remoteFilePath, const QString& localDirectoryPath)
 {
     // Skip if download already in progress
@@ -700,9 +802,18 @@ void DataCollectionController::_downloadReplayData(const QString& remoteUsername
         qCDebug(DataCollectionControllerLog) << "Download already in progress, skipping duplicate request";
         return;
     }
+
+    _downloadInProgress = true;
     
     qCDebug(DataCollectionControllerLog) << "Transferring data from:" << remoteFilePath << "to:" << localDirectoryPath;
-    _downloadInProgress = true;
+    _syncProgressPct = 0;
+    _syncFilesDone = 0;
+    _syncFilesTotal = 0;
+    if (_syncSessionName.isEmpty()) {
+        _syncSessionName = QFileInfo(remoteFilePath).fileName();
+    }
+    _syncStatusText = QString("Syncing %1: 0%").arg(_syncSessionName.isEmpty() ? QStringLiteral("session") : _syncSessionName);
+    emit syncStatusChanged();
     
     // Check if source path is local (same filesystem)
     QDir sourceDir(remoteFilePath);
@@ -719,8 +830,12 @@ void DataCollectionController::_downloadReplayData(const QString& remoteUsername
             _downloadInProgress = false;
             if (exitStatus == QProcess::NormalExit && exitCode == 0) {
                 qCDebug(DataCollectionControllerLog) << "Local data copy completed successfully";
+                _notifySyncResult(true);
+                emit syncCompleted(true);
             } else {
                 qCWarning(DataCollectionControllerLog) << "Local data copy failed with exit code" << exitCode;
+                _notifySyncResult(false);
+                emit syncCompleted(false);
             }
             copyProcess->deleteLater();
         });
@@ -728,30 +843,61 @@ void DataCollectionController::_downloadReplayData(const QString& remoteUsername
         copyProcess->start("cp", arguments);
     } else {
         qCDebug(DataCollectionControllerLog) << "Source is remote - using rsync";
-        
+        _syncInProgress = true;
         // Use rsync for remote transfer (incremental, only transfers changed files)
-        QProcess* rsync = new QProcess(this);
+        _rsyncProcess = new QProcess(this);
+        QProcess* rsyncProcess = _rsyncProcess;
         QStringList arguments;
-        arguments << "-avz" << QString("%1@%2:%3").arg(remoteUsername, remoteHostName, remoteFilePath) << localDirectoryPath;
-        
-        connect(rsync, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), 
-                this, [this, rsync](int exitCode, QProcess::ExitStatus exitStatus) {
-            _downloadInProgress = false;
-            if (exitStatus == QProcess::NormalExit && exitCode == 0) {
-                qCDebug(DataCollectionControllerLog) << "Remote data download completed successfully";
-            } else {
-                qCWarning(DataCollectionControllerLog) << "Remote data download failed with exit code" << exitCode;
+        // option to get file count
+        // https://stackoverflow.com/questions/52305722/rsync-calculate-file-count-before-transfer
+        arguments   << "-av" 
+                    << "--info=progress2"
+                    << "--no-inc-recursive"
+                    << QString("%1@%2:%3").arg(remoteUsername, remoteHostName, remoteFilePath)
+                    << localDirectoryPath;
+
+        connect(rsyncProcess, &QProcess::readyReadStandardOutput, this, [this, rsyncProcess]() {
+            while (rsyncProcess->canReadLine()) {
+                const QString line = QString::fromUtf8(rsyncProcess->readLine()).trimmed();
+                // qCDebug(DataCollectionControllerLog) << "rsync output:" << line;
+                _parseRsyncOutput(line);
             }
-            rsync->deleteLater();
         });
         
-        rsync->start("rsync", arguments);
+        connect(rsyncProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), 
+                this, [this, rsyncProcess](int exitCode, QProcess::ExitStatus exitStatus) {
+            _downloadInProgress = false;
+            _syncInProgress = false;
+            if (exitStatus == QProcess::NormalExit && exitCode == 0) {
+                qCDebug(DataCollectionControllerLog) << "Remote data download completed successfully";
+                _notifySyncResult(true);
+                emit syncCompleted(true);
+            } else {
+                _notifySyncResult(false);
+                emit syncCompleted(false);
+                qCWarning(DataCollectionControllerLog) << "Remote data download failed with exit code" << exitCode;
+            }
+
+            emit syncStatusChanged();
+
+            if (_rsyncProcess == rsyncProcess) {
+                _rsyncProcess = nullptr;
+            }
+            rsyncProcess->deleteLater();
+        });
+        
+        rsyncProcess->start("rsync", arguments);
     }
 }
 
 void DataCollectionController::_getReplayDataRemotePath()
 {
     qCDebug(DataCollectionControllerLog) << "Requesting collected data info via HTTP";
+
+    _syncInProgress = true;
+    _syncStatusText = QString("Requesting data info for sync...");
+    emit syncStatusChanged();
+    
 
     CustomPlugin* plugin = qobject_cast<CustomPlugin*>(QGCCorePlugin::instance());
     if (!plugin || !plugin->customSettings()) {
@@ -769,7 +915,7 @@ void DataCollectionController::_getReplayDataRemotePath()
     
     // _remoteDataFetchpath = QString("%1@%2:%3").arg(plugin->customSettings()->remoteUserName()->rawValue().toString(), ipAddress, plugin->customSettings()->remoteDataPath()->rawValue().toString());
     
-    QNetworkRequest request(QUrl(QString(httpUrl + "/data_collection_info")));
+    QNetworkRequest request(QUrl(QString(httpUrl + "/data_collection_info?folder_name=" + plugin->customSettings()->folderName()->rawValue().toString())));
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
 
     QNetworkReply* reply = _networkManager.get(request);
@@ -794,6 +940,8 @@ void DataCollectionController::_getReplayDataRemotePath()
             }
         } else {
             qCDebug(DataCollectionControllerLog) << "Data collection info HTTP request failed. Error:" << reply->errorString();
+            _notifySyncResult(false);
+            emit syncCompleted(false);
         }
         reply->deleteLater();
     });
@@ -817,10 +965,9 @@ void DataCollectionController::_startPeriodicStreamInfoRequest()
     
     // Make initial request immediately, then start periodic timer
     QTimer::singleShot(1000, this, [this]() {
-        if (_vehicle) {  // Check vehicle still exists
-            _requestStreamInfo();
-            _streamInfoTimer.start(STREAM_INFO_POLL_INTERVAL_MS);
-        }
+        _requestStreamInfo();
+        _streamInfoTimer.start(STREAM_INFO_POLL_INTERVAL_MS);
+    
     });
 }
 
@@ -875,10 +1022,10 @@ void DataCollectionController::_sendReadySignalToDataCollector()
 // //-----------------------------------------------------------------------------
 void DataCollectionController::_requestStreamInfo()
 {
-    if (!_vehicle) {
-        qCWarning(DataCollectionControllerLog) << "_requestStreamInfo: No active vehicle";
-        return;
-    }
+    // if (!_vehicle) {
+    //     qCWarning(DataCollectionControllerLog) << "_requestStreamInfo: No active vehicle";
+    //     return;
+    // }
     
     qCDebug(DataCollectionControllerLog) << "_requestStreamInfo() - retries:" << _streamInfoRetries;
     
@@ -1143,11 +1290,6 @@ void DataCollectionController::_stopPeriodicDataSync()
     }
     disconnect(&_periodicSyncTimer, nullptr, this, nullptr);
 
-    // Trigger one final sync before shutting down the timer
-    if (!_downloadInProgress) {
-        qCDebug(DataCollectionControllerLog) << "Triggering final data sync on periodic sync stop";
-        _getReplayDataRemotePath();
-    }
 }
 
 QString findSessionMetadata(const QString& folderPath, const QString& flightId) {

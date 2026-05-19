@@ -394,7 +394,7 @@ LogReplayLinkController::VideoStreamInfo LogReplayLinkController::_processVideoP
                 // Calculate offset using first frame's timestamp
                 if (tlogStartUSecs > 0) {
                     const quint64 frameStartUSecs = frameTimestampNs / 1000;  // Convert ns to us
-                    streamInfo.offsetMs = static_cast<qint64>((frameStartUSecs - tlogStartUSecs) / 1000);
+                    streamInfo.offsetMs = (static_cast<qint64>(frameStartUSecs) - static_cast<qint64>(tlogStartUSecs)) / 1000;
                 }
 
                 qCDebug(LogReplayLinkControllerLog) << "Frame-based video offset:" << streamInfo.offsetMs << "ms"
@@ -644,7 +644,7 @@ bool LogReplayLinkController::loadFromMetadataFolder(const QString &metadataFold
             // For file-based videos, use the metadata offset if not calculated from directory
             if (!streamInfo.isDirectory && tlogStartUSecs > 0 && streamStartUnix > 0) {
                 quint64 streamStartUSecs = static_cast<quint64>(streamStartUnix * 1000000.0);
-                streamInfo.offsetMs = static_cast<qint64>((streamStartUSecs - tlogStartUSecs) / 1000);
+                streamInfo.offsetMs = (static_cast<qint64>(streamStartUSecs) - static_cast<qint64>(tlogStartUSecs)) / 1000;
                 qCDebug(LogReplayLinkControllerLog) << "File-based video offset:" << streamInfo.offsetMs << "ms"
                                                     << "(stream:" << streamStartUSecs << "usecs)";
             }
@@ -805,6 +805,11 @@ bool LogReplayLinkController::loadSessionByFlightId(const QString &flightId)
                 (void) connect(videoMgr, &CustomVideoManager::videoReplaySegmentsChanged,
                     this, &LogReplayLinkController::videoReplaySegmentsChanged,
                     Qt::UniqueConnection);
+
+                connect(link, &LogReplayLink::playbackAtEnd, this, &LogReplayLinkController::_onPlaybackAtEnd);
+                connect(link, &LogReplayLink::playbackAtEnd, this, [videoMgr]() {
+                    videoMgr->restartAllStreamsToBeginning();
+                });
                 
                 // Notify QML that segments are ready (videos already loaded above)
                 emit videoReplaySegmentsChanged();
@@ -847,4 +852,10 @@ QString LogReplayLinkController::_findTlogByFlightId(const QString &flightId)
     
     qCWarning(LogReplayLinkControllerLog) << "Tlog not found for flight_id:" << flightId << "in" << telemetryDir;
     return QString();
+}
+
+void LogReplayLinkController::_onPlaybackAtEnd() const
+{
+    qCDebug(LogReplayLinkControllerLog) << "Playback reached end, looping back to start";
+    setIsPlaying(true);
 }

@@ -26,7 +26,7 @@ Item {
     property var mapControl:           _mapControl
     property bool gridModeActive:   false               // Whether grid mode is active
 
-    property var dataController: null
+    property var dataController: QGroundControl.corePlugin.dataCollectionController
     property bool replayDialogVisible: false 
 
     readonly property string noGPS:         qsTr("NO GPS")
@@ -178,87 +178,101 @@ Item {
                     horizontalAlignment: Text.AlignHCenter
                     z: 1  // Draw on top of video
                 }
+
+                Rectangle {
+                    anchors.top: parent.top
+                    anchors.right: parent.right
+                    anchors.margins: ScreenTools.defaultFontPixelWidth * 0.5
+                    width: ScreenTools.defaultFontPixelHeight * 0.75
+                    height: width
+                    radius: width * 0.5
+                    color: _thermalDecoding ? "lime" : (_thermalActive ? "gold" : "red")
+                    border.width: 1
+                    border.color: "black"
+                    z: 2
+                }
             }
         }
 
-        // Detailed Status Panel (for debugging)
-    Rectangle {
-        anchors.top: parent.top
-        anchors.right: dualVideoWidget.left
-        anchors.rightMargin: 16
-        width: debugColumn.width + 16
-        height: debugColumn.height + 16
-        color: "black"
-        opacity: 0.85
-        radius: 4
-        border.color: "white"
-        border.width: 1
-
-        Column {
-            id: debugColumn
-            anchors.centerIn: parent
-            spacing: 4
-
-            QGCLabel {
-                text: "Stream Status"
-                color: "cyan"
-                font.bold: true
-            }
-
-            QGCLabel {
-                text: "Manager: " + (_customVideoManager ? "✓" : "✗")
-                color: _customVideoManager ? "lime" : "red"
-            }
-
-            Rectangle { width: 150; height: 1; color: "gray" }
-
-            QGCLabel {
-                text: "RGB (0):"
-                color: "white"
-                font.bold: true
-            }
-            QGCLabel {
-                text: "  URI: " + _rgbUri
-                color: "white"
-                font.pixelSize: ScreenTools.smallFontPointSize
-            }
-            QGCLabel {
-                text: "  Active: " + (_rgbActive ? "✓" : "✗")
-                color: _rgbActive ? "lime" : "red"
-            }
-            QGCLabel {
-                text: "  Decoding: " + (_rgbDecoding ? "✓" : "✗")
-                color: _rgbDecoding ? "lime" : "red"
-            }
-
-            Rectangle { width: 150; height: 1; color: "gray" }
-
-            QGCLabel {
-                text: "Thermal (1):"
-                color: "white"
-                font.bold: true
-            }
-            QGCLabel {
-                text: "  URI: " + _thermalUri
-                color: "white"
-                font.pixelSize: ScreenTools.smallFontPointSize
-            }
-            QGCLabel {
-                text: "  Active: " + (_thermalActive ? "✓" : "✗")
-                color: _thermalActive ? "lime" : "red"
-            }
-            QGCLabel {
-                text: "  Decoding: " + (_thermalDecoding ? "✓" : "✗")
-                color: _thermalDecoding ? "lime" : "red"
-            }
-        }
-
-        // Click to hide (optional)
-        MouseArea {
-            anchors.fill: parent
-            onDoubleClicked: parent.visible = false
-        }
     }
+
+    ColumnLayout {
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.top: parent.top        
+        z: QGroundControl.zOrderWidgets
+        visible: dataController ? dataController.syncInProgress : false
+
+        QGCLabel {
+            text: dataController ? dataController.syncStatusText : ""
+            Layout.alignment: Qt.AlignHCenter
+        }
+
+        ProgressBar {
+            id: dcSyncProgressBar
+            Layout.fillWidth: true
+            visible: dataController ? dataController.syncInProgress : false
+            width: Math.min(parent.width * 0.8, ScreenTools.defaultFontPixelWidth * 70)
+            height: 64
+            from: 0
+            to: 100
+            value: dataController ? dataController.syncProgressPct : 0
+
+            MouseArea {
+                id: mouseArea
+                anchors.fill: parent
+                hoverEnabled: true
+            }
+
+            Item {
+                width: 16
+                height: 16
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                visible: mouseArea.containsMouse || cancelMouseArea.containsMouse
+
+                MouseArea {
+                    id: cancelMouseArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+
+                    onClicked: {
+                        if (dataController) {
+                            dataController.cancelSync()
+                        }
+                    }
+                }
+
+                Rectangle {
+                    id: badge
+                    anchors.fill: parent
+                    radius: width / 2
+                    color: "red"
+                    antialiasing: true
+
+                    // White X
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: parent.width * 0.58
+                        height: Math.max(3, parent.width * 0.09)
+                        radius: height / 2
+                        color: "white"
+                        rotation: 45
+                        antialiasing: true
+                    }
+
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: parent.width * 0.58
+                        height: Math.max(3, parent.width * 0.09)
+                        radius: height / 2
+                        color: "white"
+                        rotation: -45
+                        antialiasing: true
+                    }
+                }
+            }
+        }
     }
 
     // Replay Mode Dialog
@@ -379,7 +393,7 @@ Item {
         rightEdgeCenterInset:   parentToolInsets.rightEdgeCenterInset
         rightEdgeBottomInset:   parentToolInsets.rightEdgeBottomInset
         topEdgeLeftInset:       parentToolInsets.topEdgeLeftInset
-        topEdgeCenterInset:     compassArrowIndicator.y + compassArrowIndicator.height
+        topEdgeCenterInset:     parentToolInsets.topEdgeCenterInset
         topEdgeRightInset:      parentToolInsets.topEdgeRightInset
         bottomEdgeLeftInset:    parentToolInsets.bottomEdgeLeftInset
         bottomEdgeCenterInset:  parentToolInsets.bottomEdgeCenterInset

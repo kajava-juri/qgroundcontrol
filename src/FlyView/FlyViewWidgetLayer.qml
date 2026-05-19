@@ -54,10 +54,10 @@ Item {
         rightEdgeCenterInset:   topRightPanel.rightEdgeCenterInset
         rightEdgeBottomInset:   bottomRightRowLayout.rightEdgeBottomInset
         topEdgeLeftInset:       toolStrip.topEdgeLeftInset
-        topEdgeCenterInset:     mapScale.topEdgeCenterInset
+        topEdgeCenterInset:     mapScale.visible ? mapScale.topEdgeCenterInset : parentToolInsets.topEdgeCenterInset
         topEdgeRightInset:      topRightPanel.topEdgeRightInset
         bottomEdgeLeftInset:    virtualJoystickMultiTouch.visible ? virtualJoystickMultiTouch.bottomEdgeLeftInset : parentToolInsets.bottomEdgeLeftInset
-        bottomEdgeCenterInset:  bottomRightRowLayout.bottomEdgeCenterInset
+        bottomEdgeCenterInset:  parentToolInsets.bottomEdgeLeftInset
         bottomEdgeRightInset:   virtualJoystickMultiTouch.visible ? virtualJoystickMultiTouch.bottomEdgeRightInset : bottomRightRowLayout.bottomEdgeRightInset
     }
 
