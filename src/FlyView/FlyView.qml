@@ -91,24 +91,6 @@ Item {
             videoControl.inReplayMode = active
             droneReplayControl.visible = active
         }
-
-        function onStreamStateChanged(streamIndex, active) {
-            if (streamIndex === 0) {
-                _rgbActive = active
-            }
-        }
-
-        function onStreamDecodingChanged(streamIndex, decoding) {
-            if (streamIndex === 0) {
-                _rgbDecoding = decoding
-            }
-        }
-
-        function onStreamUriChanged(streamIndex, uri) {
-            if (streamIndex === 0) {
-                _rgbUri = uri
-            }
-        }
     
     }
 
@@ -134,6 +116,10 @@ Item {
             pipView:        _pipView
             inReplayMode:   videoControl.inReplayMode
         }
+
+        // Separate video item for drone replay so we can have independent PipView state and avoid issues with switching between replay and live modes which causes the video item to be recreated and lose its PipView state
+        // Reason behind it is to not interfere with the drone's live video item and managing it outside of the upstream VideoManager will cause issues as this is not handled and also to avoid modifications of the VideoManager's code
+        // The upstream VideoManager is not created to be extended so a CustomVideoManager is created which copies most of the code
 
         Item {
             id: droneReplayControl
@@ -164,80 +150,6 @@ Item {
             }
         }
 
-        Item {
-            id: customStreamControl
-            
-            property Item pipView: _pipView2
-            property Item pipState: customStreamPipState
-            property bool streamActive: false  // Track if stream is active
-
-            PipState {
-                id:         customStreamPipState
-                pipView:    customStreamControl.pipView
-                isDark:     true
-            }
-            
-            Loader {
-                id: videoLoader
-                anchors.fill: parent
-                sourceComponent: rgbComponent  // Default
-            }
-
-            Rectangle {
-                anchors.top: parent.top
-                anchors.right: parent.right
-                anchors.margins: ScreenTools.defaultFontPixelWidth * 0.5
-                width: ScreenTools.defaultFontPixelHeight * 0.75
-                height: width
-                radius: width * 0.5
-                color: _rgbDecoding ? "lime" : (_rgbActive ? "gold" : "red")
-                border.width: 1
-                border.color: "black"
-                z: 2
-            }
-            
-            Component {
-                id: rgbComponent
-                GstGLQt6VideoItem {
-                    id: rgbVideoItem
-                    objectName: "customRgbVideo"
-                }
-            }
-            
-            // Component {
-            //     id: thermalComponent
-            //     GstGLQt6VideoItem {
-            //         objectName: "customThermalVideo"
-            //     }
-            // }
-
-            // Black box overlay when stream is not active
-            Rectangle {
-                anchors.fill: parent
-                color: "black"
-                visible: !customStreamControl.streamActive && !videoControl.inReplayMode 
-                z: 1  // Above video but below other UI elements
-            }
-
-            // Listen to stream state changes from CustomVideoManager
-            Connections {
-                target: QGroundControl.corePlugin.customVideoManager
-
-                function onStreamStateChanged(streamIndex, active) {
-                    if (streamIndex === 0) {  // RGB stream
-                        customStreamControl.streamActive = active
-                    }
-                }
-            }
-
-            Component.onCompleted: {
-                // Initialize stream state
-                if (QGroundControl.corePlugin.customVideoManager) {
-                    customStreamControl.streamActive = QGroundControl.corePlugin.customVideoManager.isStreamActive(0)
-                }
-            }
-        }
-
         PipView {
             id:                     _pipView
             anchors.left:           parent.left
@@ -255,45 +167,6 @@ Item {
             property real bottomEdgeLeftInset: visible ? height + anchors.margins : 0
         }
 
-        // Dummy item for custom stream PipView item2
-        Item {
-            id: customStreamDummy
-            
-            property Item pipState: customStreamDummyPipState
-            
-            PipState {
-                id:         customStreamDummyPipState
-                pipView:    _pipView2
-                isDark:     false
-            }
-        }
-
-        Item {
-            id: customStreamDummy2
-            
-            property Item pipState: customStreamDummyPipState2
-            
-            PipState {
-                id:         customStreamDummyPipState2
-                pipView:    _pipView3
-                isDark:     false
-            }
-        }
-
-        PipView {
-            id:                     _pipView2
-            anchors.right:          parent.right
-            anchors.bottom:         parent.bottom
-            anchors.margins:        _toolsMargin
-            item1IsFullSettingsKey: "CustomStreamIsFullscreen"
-            item1IsFullDefault:     true   // Start in fullscreen mode (grid needs easy access)
-            resizeCorner:           "topLeft"  // Resize from top-left since on right side
-            item1:                  customStreamControl
-            item2:                  customStreamDummy
-            show:                   true
-            z:                      QGroundControl.zOrderWidgets
-            visible:                !_gridModeActive  // Hide when grid mode active
-        }
 
         PipView {
             id:                     _pipView3
@@ -404,47 +277,4 @@ Item {
         visible:            !QGroundControl.videoManager.fullScreen
     }
 
-    // Simple toggle button (temporary - will move to toolbar later)
-    Rectangle {
-        id: gridToggleButton
-        anchors.top: parent.top
-        anchors.right: parent.right
-        anchors.topMargin: toolbar.height + 10
-        anchors.rightMargin: 10
-        width: 120
-        height: 40
-        color: _gridModeActive ? "cyan" : "gray"
-        border.color: "white"
-        border.width: 2
-        radius: 4
-        z: QGroundControl.zOrderTopMost
-        visible: false
-
-        Text {
-            anchors.centerIn: parent
-            text: _gridModeActive ? "Overlay Mode" : "Grid Mode"
-            color: "black"
-            font.pixelSize: 14
-            font.bold: true
-        }
-
-        MouseArea {
-            anchors.fill: parent
-            onClicked: {
-                _gridModeActive = !_gridModeActive
-                // debug print
-                console.log("Grid Mode Active:", _gridModeActive)
-                if (gridView.item) {
-                    gridView.item.gridState.state = _gridModeActive ? "grid" : "hidden"
-                }
-
-                // Give Loaders time to create/destroy widgets, then reinitialize CustomVideoManager
-                Qt.callLater(function() {
-                    if (QGroundControl.corePlugin.customVideoManager) {
-                        QGroundControl.corePlugin.customVideoManager.reinitializeWidgets(_gridModeActive)
-                    }
-                })
-            }
-        }
-    }
 }

@@ -87,6 +87,7 @@ Item {
     function _setPipIsExpanded(isExpanded) {
         QGroundControl.saveBoolGlobalSetting(_pipExpandedSettingsKey, isExpanded)
         _isExpanded = isExpanded
+        console.log("PIP " + (isExpanded ? "expanded" : "collapsed"))
     }
 
     Window {
@@ -147,7 +148,7 @@ Item {
                 var parentPos = mapToItem(_root.parent, mouse.x, mouse.y)
                 var delta = parentPos.x - pipResize.initialParentX
                 // For left resize corner, invert delta (drag left = bigger, drag right = smaller)
-                var newWidth = resizeCorner === "topLeft" 
+                var newWidth = resizeCorner === "topLeft" || resizeCorner === "bottomLeft"
                     ? pipResize.initialWidth - delta 
                     : pipResize.initialWidth + delta
                 if (newWidth < parentWidth * _maxSize && newWidth > parentWidth * _minSize) {
@@ -163,14 +164,20 @@ Item {
         source:         "/qmlimages/pipResize.svg"
         fillMode:       Image.PreserveAspectFit
         mipmap:         true
-        anchors.right:  resizeCorner === "topRight" ? parent.right : undefined
-        anchors.left:   resizeCorner === "topLeft" ? parent.left : undefined
-        anchors.top:    parent.top
+        anchors.right:  resizeCorner === "topRight" || resizeCorner === "bottomRight" ? parent.right : undefined
+        anchors.left:   resizeCorner === "topLeft" || resizeCorner === "bottomLeft" ? parent.left : undefined
+        anchors.bottom: resizeCorner === "bottomLeft" || resizeCorner === "bottomRight" ? parent.bottom : undefined
+        anchors.top:    resizeCorner === "topLeft" || resizeCorner === "topRight" ? parent.top : undefined
         visible:        _isExpanded && (ScreenTools.isMobile || pipMouseArea.containsMouse)
         height:         ScreenTools.defaultFontPixelHeight * 2.5
         width:          ScreenTools.defaultFontPixelHeight * 2.5
         sourceSize.height:  height
-        mirror:         resizeCorner === "topLeft"  // Flip icon horizontally for left side
+        mirror:         resizeCorner === "topLeft" || resizeCorner === "bottomLeft" ? true : false  // Flip icon horizontally for left side
+        transform: [
+            Translate { y: (resizeCorner === "bottomLeft" || resizeCorner === "bottomRight") ? -pipResizeIcon.height : 0 },
+            Scale { yScale: (resizeCorner === "bottomLeft" || resizeCorner === "bottomRight") ? -1 : 1 }
+        ]
+        
     }
 
     // Check min/max constraints on pip size when when parent is resized
@@ -197,8 +204,8 @@ Item {
         source:         "/qmlimages/PiP.svg"
         mipmap:         true
         fillMode:       Image.PreserveAspectFit
-        anchors.left:   resizeCorner === "topRight" ? parent.left : undefined
-        anchors.right:  resizeCorner === "topLeft" ? parent.right : undefined
+        anchors.left:   resizeCorner === "topRight" || resizeCorner === "bottomRight" ? parent.left : undefined
+        anchors.right:  resizeCorner === "topLeft" || resizeCorner === "bottomLeft" ? parent.right : undefined
         anchors.top:    parent.top
         visible:        _isExpanded && !ScreenTools.isMobile && pipMouseArea.containsMouse
         height:         ScreenTools.defaultFontPixelHeight * 2.5
@@ -216,8 +223,8 @@ Item {
         source:         "/qmlimages/pipHide.svg"
         mipmap:         true
         fillMode:       Image.PreserveAspectFit
-        anchors.left:   resizeCorner === "topRight" ? parent.left : undefined
-        anchors.right:  resizeCorner === "topLeft" ? parent.right : undefined
+        anchors.left:   resizeCorner === "topRight" || resizeCorner === "bottomRight" ? parent.left : undefined
+        anchors.right:  resizeCorner === "topLeft" || resizeCorner === "bottomLeft" ? parent.right : undefined
         anchors.bottom: parent.bottom
         visible:        _isExpanded && (ScreenTools.isMobile || pipMouseArea.containsMouse)
         height:         ScreenTools.defaultFontPixelHeight * 2.5
@@ -231,8 +238,8 @@ Item {
 
     Rectangle {
         id:                     showPip
-        anchors.left :          resizeCorner === "topRight" ? parent.left : undefined
-        anchors.right:          resizeCorner === "topLeft" ? parent.right : undefined
+        anchors.left :          resizeCorner === "topRight" || resizeCorner === "bottomRight" ? parent.left : undefined
+        anchors.right:          resizeCorner === "topLeft" || resizeCorner === "bottomLeft" ? parent.right : undefined
         anchors.bottom:         parent.bottom
         height:                 ScreenTools.defaultFontPixelHeight * 2
         width:                  ScreenTools.defaultFontPixelHeight * 2

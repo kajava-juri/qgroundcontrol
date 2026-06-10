@@ -101,99 +101,236 @@ Item {
         return hours+':'+minutes+':'+seconds;
     }
 
+    Item {
+        id: flirStreamControl
+        
+        property Item pipView: _flirPipView
+        property Item pipState: flirStreamPipState
+        property bool streamActive: false  // Track if stream is active
 
-    // Dual video streams for data collection
-    // Hidden in grid mode as video streams are shown in grid cells
-    Rectangle {
-        id: dualVideoWidget
-        anchors.right: parent.right
-        anchors.top: parent.top
-        anchors.margins: ScreenTools.defaultFontPixelWidth
-        width: 320
-        height: 240
-        color: "black"
-        border.color: "white"
-        border.width: 2
-        visible: !gridModeActive  // Hide when grid mode is active
-
-        Component.onCompleted: {
-            console.log("DualVideoWidget: Initializing...")
+        PipState {
+            id:         flirStreamPipState
+            pipView:    flirStreamControl.pipView
+            isDark:     true
+        }
+        
+        Loader {
+            id: videoLoader1
+            anchors.fill: parent
+            sourceComponent: GstGLQt6VideoItem {
+                id: thermalVideoItem
+                objectName: "customThermalVideo"
+            }
         }
 
-        Row {
+        Rectangle {
+            anchors.top: parent.top
+            anchors.right: parent.right
+            anchors.margins: ScreenTools.defaultFontPixelWidth * 0.5
+            width: ScreenTools.defaultFontPixelHeight * 0.75
+            height: width
+            radius: width * 0.5
+            color: _rgbDecoding ? "lime" : (_rgbActive ? "gold" : "red")
+            border.width: 1
+            border.color: "black"
+            z: 2
+        }
+
+        // Black box overlay when stream is not active
+        Rectangle {
             anchors.fill: parent
-            spacing: 2
+            color: "black"
+            visible: !flirStreamControl.streamActive && !videoControl.inReplayMode 
+            z: 1  // Above video but below other UI elements
+        }
 
-            // RGB Video
-            // Rectangle {
-            //     width: parent.width / 2 - 1
-            //     height: parent.height
-            //     color: "black"
-            //     border.color: "green"
-            //     border.width: 1
+        // Listen to stream state changes from CustomVideoManager
+        Connections {
+            target: QGroundControl.corePlugin.customVideoManager
 
-            //     // Only create video item when visible to avoid conflicts with grid mode
-            //     Loader {
-            //         anchors.fill: parent
-            //         active: dualVideoWidget.visible
-            //         sourceComponent: GstGLQt6VideoItem {
-            //             id: rgbVideoItem
-            //             objectName: "customRgbVideo"
-            //         }
-            //     }
-
-            //     Text {
-            //         anchors.top: parent.top
-            //         anchors.left: parent.left
-            //         text: "RGB Camera"
-            //         color: "white"
-            //         horizontalAlignment: Text.AlignHCenter
-            //         z: 1  // Draw on top of video
-            //     }
-            // }
-
-            // Thermal Video
-            Rectangle {
-                width: parent.width - 1
-                height: parent.height
-                color: "black"
-                border.color: "red"
-                border.width: 1
-
-                // Only create video item when visible to avoid conflicts with grid mode
-                Loader {
-                    anchors.fill: parent
-                    active: dualVideoWidget.visible
-                    sourceComponent: GstGLQt6VideoItem {
-                        id: thermalVideoItem
-                        objectName: "customThermalVideo"
-                    }
-                }
-
-                Text {
-                    anchors.top: parent.top
-                    anchors.left: parent.left
-                    text: "Thermal Camera"
-                    color: "white"
-                    horizontalAlignment: Text.AlignHCenter
-                    z: 1  // Draw on top of video
-                }
-
-                Rectangle {
-                    anchors.top: parent.top
-                    anchors.right: parent.right
-                    anchors.margins: ScreenTools.defaultFontPixelWidth * 0.5
-                    width: ScreenTools.defaultFontPixelHeight * 0.75
-                    height: width
-                    radius: width * 0.5
-                    color: _thermalDecoding ? "lime" : (_thermalActive ? "gold" : "red")
-                    border.width: 1
-                    border.color: "black"
-                    z: 2
+            function onStreamStateChanged(streamIndex, active) {
+                if (streamIndex === 0) {  // RGB stream
+                    flirStreamControl.streamActive = active
                 }
             }
         }
 
+        Component.onCompleted: {
+            // Initialize stream state
+            if (QGroundControl.corePlugin.customVideoManager) {
+                flirStreamControl.streamActive = QGroundControl.corePlugin.customVideoManager.isStreamActive(0)
+            }
+        }
+    }
+
+    // Dummy item for custom stream PipView item2
+    Item {
+        id: flirStreamDummy
+        
+        property Item pipState: flirStreamDummyPipState
+        
+        PipState {
+            id:         flirStreamDummyPipState
+            pipView:    _flirPipView
+            isDark:     false
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            visible: flirStreamDummyPipState.state !== flirStreamDummyPipState.fullState
+            color: "black"
+            opacity: 0.8
+            z: 1
+
+            Text {
+                anchors.centerIn: parent
+                text: qsTr("click to toggle fullscreen")
+                color: "white"
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                onClicked: flirStreamDummyPipState.state = flirStreamDummyPipState.fullState
+            }
+        }
+    }
+
+
+    PipView {
+        id:                     _flirPipView
+        anchors.right:          parent.right
+        anchors.top:         parent.top
+        anchors.margins:        _toolsMargin
+        item1IsFullSettingsKey: "FlirStreamIsFullscreen"
+        item1IsFullDefault:     false   // Start in fullscreen mode (grid needs easy access)
+        resizeCorner:           "bottomLeft"  // Resize from top-left since on right side
+        item1:                  flirStreamControl
+        item2:                  flirStreamDummy
+        show:                   true
+        z:                      QGroundControl.zOrderWidgets
+        visible:                !_gridModeActive  // Hide when grid mode active
+    }
+
+
+    Item {
+        id: customStreamControl
+        
+        property Item pipView: _pipView2
+        property Item pipState: customStreamPipState
+        property bool streamActive: false  // Track if stream is active
+
+        PipState {
+            id:         customStreamPipState
+            pipView:    customStreamControl.pipView
+            isDark:     true
+        }
+        
+        Loader {
+            id: videoLoader2
+            anchors.fill: parent
+            sourceComponent: rgbComponent  // Default
+        }
+
+        Rectangle {
+            anchors.top: parent.top
+            anchors.right: parent.right
+            anchors.margins: ScreenTools.defaultFontPixelWidth * 0.5
+            width: ScreenTools.defaultFontPixelHeight * 0.75
+            height: width
+            radius: width * 0.5
+            color: _rgbDecoding ? "lime" : (_rgbActive ? "gold" : "red")
+            border.width: 1
+            border.color: "black"
+            z: 2
+        }
+        
+        Component {
+            id: rgbComponent
+            GstGLQt6VideoItem {
+                id: rgbVideoItem
+                objectName: "customRgbVideo"
+            }
+        }
+        
+        // Component {
+        //     id: thermalComponent
+        //     GstGLQt6VideoItem {
+        //         objectName: "customThermalVideo"
+        //     }
+        // }
+
+        // Black box overlay when stream is not active
+        Rectangle {
+            anchors.fill: parent
+            color: "black"
+            visible: !customStreamControl.streamActive && !videoControl.inReplayMode 
+            z: 1  // Above video but below other UI elements
+        }
+
+        // Listen to stream state changes from CustomVideoManager
+        Connections {
+            target: QGroundControl.corePlugin.customVideoManager
+
+            function onStreamStateChanged(streamIndex, active) {
+                if (streamIndex === 0) {  // RGB stream
+                    customStreamControl.streamActive = active
+                }
+            }
+        }
+
+        Component.onCompleted: {
+            // Initialize stream state
+            if (QGroundControl.corePlugin.customVideoManager) {
+                customStreamControl.streamActive = QGroundControl.corePlugin.customVideoManager.isStreamActive(0)
+            }
+        }
+    }
+
+    // Dummy item for custom stream PipView item2
+    Item {
+        id: customStreamDummy
+        
+        property Item pipState: customStreamDummyPipState
+        
+        PipState {
+            id:         customStreamDummyPipState
+            pipView:    _pipView2
+            isDark:     false
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            visible: customStreamDummyPipState.state !== customStreamDummyPipState.fullState
+            color: "black"
+            opacity: 0.8
+            z: 1
+
+            Text {
+                anchors.centerIn: parent
+                text: qsTr("click to toggle fullscreen")
+                color: "white"
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                onClicked: customStreamDummyPipState.state = customStreamDummyPipState.fullState
+            }
+        }
+    }
+
+    PipView {
+        id:                     _pipView2
+        anchors.right:          parent.right
+        anchors.bottom:         parent.bottom
+        anchors.margins:        _toolsMargin
+        item1IsFullSettingsKey: "CustomStreamIsFullscreen"
+        item1IsFullDefault:     true   // Start in fullscreen mode (grid needs easy access)
+        resizeCorner:           "topLeft"  // Resize from top-left since on right side
+        item1:                  customStreamControl
+        item2:                  customStreamDummy
+        show:                   true
+        z:                      QGroundControl.zOrderWidgets
+        visible:                !_gridModeActive  // Hide when grid mode active
     }
 
     ColumnLayout {
@@ -400,73 +537,48 @@ Item {
         bottomEdgeRightInset:   parentToolInsets.bottomEdgeRightInset
     }
 
-    // Row {
-    //     anchors.right: parent.right
-    //     anchors.top: parent.top
-    //     anchors.topMargin: ScreenTools.defaultFontPixelWidth * 4
-    //     anchors.margins: ScreenTools.defaultFontPixelWidth
-    //     spacing: ScreenTools.defaultFontPixelWidth / 2
-        
+    Rectangle {
+        id: gridToggleButton
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.topMargin: toolbar.height + 10
+        anchors.rightMargin: 10
+        width: 120
+        height: 40
+        color: _gridModeActive ? "cyan" : "gray"
+        border.color: "white"
+        border.width: 2
+        radius: 4
+        z: QGroundControl.zOrderTopMost
+        visible: false
 
+        Text {
+            anchors.centerIn: parent
+            text: _gridModeActive ? "Overlay Mode" : "Grid Mode"
+            color: "black"
+            font.pixelSize: 14
+            font.bold: true
+        }
 
-    //     // Text {
-    //     //     anchors.verticalCenter: parent.verticalCenter
-    //     //     text: dataController.recordingTime
-    //     //     color: "white"
-    //     //     visible: dataController.isCollecting
-    //     // }
-    // }
+        MouseArea {
+            anchors.fill: parent
+            onClicked: {
+                _gridModeActive = !_gridModeActive
+                // debug print
+                console.log("Grid Mode Active:", _gridModeActive)
+                if (gridView.item) {
+                    gridView.item.gridState.state = _gridModeActive ? "grid" : "hidden"
+                }
 
-
-    // Column {
-    //     anchors.right: parent.right
-    //     anchors.top: parent.top
-    //     anchors.topMargin: 258
-    //     anchors.margins: ScreenTools.defaultFontPixelWidth
-    //     spacing: ScreenTools.defaultFontPixelHeight
-
-    //     QGCButton {
-    //         text: qsTr("Data Collection Settings")
-    //         onClicked: {
-    //             var dialog = dataCollectionDialogComponent.createObject(mainWindow, {
-    //                 "_customSettings": QGroundControl.corePlugin.customSettings
-    //             })
-    //             dialog.open()
-    //         }
-    //     }
-
-    //     Rectangle {
-    //         width: ScreenTools.defaultFontPixelWidth * 18
-    //         height: ScreenTools.defaultFontPixelHeight * 2
-    //         color: dataController.isCollecting ? "#e03131" : "#12b886"
-    //         radius: 4
-            
-    //         Text {
-    //             anchors.centerIn: parent
-    //             text: dataController.isCollecting ? "Stop Recording" : "Start Recording"
-    //             color: "white"
-    //         }
-            
-    //         MouseArea {
-    //             anchors.fill: parent
-    //             onClicked: dataController.toggleRecording()
-    //         }
-    //     }
-
-    //     // Text {
-    //     //     text: "Test Value: " + dataController.testValue
-    //     //     color: "white"
-    //     //     font.pixelSize: 24
-    //     // }
-        
-
-    //     Component {
-    //         id: dataCollectionDialogComponent
-    //         DataCollectionDialog {
-    //             // _customSettings passed via createObject properties
-    //         }
-    //     }
-    // }
+                // Give Loaders time to create/destroy widgets, then reinitialize CustomVideoManager
+                Qt.callLater(function() {
+                    if (QGroundControl.corePlugin.customVideoManager) {
+                        QGroundControl.corePlugin.customVideoManager.reinitializeWidgets(_gridModeActive)
+                    }
+                })
+            }
+        }
+    }
 
     // This is an example of how you can use parent tool insets to position an element on the custom fly view layer
     // - we use parent topEdgeLeftInset to position the widget below the toolstrip
