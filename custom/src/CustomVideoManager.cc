@@ -64,13 +64,16 @@ void CustomVideoManager::_initAfterQmlIsReady()
 
     qCWarning(CustomVideoManagerLog) << "_initAfterQmlIsReady - searching for video widgets";
 
-    QQuickItem* rgbWidget = _mainWindow->findChild<QQuickItem*>("customRgbVideo");
-    QQuickItem* thermalWidget = _mainWindow->findChild<QQuickItem*>("customThermalVideo");
+    QQuickItem* bottomRightWidget = _mainWindow->findChild<QQuickItem*>("customBottomRightVideo");
+    QQuickItem* topRightWidget = _mainWindow->findChild<QQuickItem*>("customTopRightVideo");
 
-    qCWarning(CustomVideoManagerLog) << "Found widgets - RGB:" << rgbWidget << "Thermal:" << thermalWidget;
+    _streamWidgets[STREAM_BR] = bottomRightWidget;
+    _streamWidgets[STREAM_TR] = topRightWidget;
 
-    _setupReceiver(STREAM_RGB, rgbWidget);
-    _setupReceiver(STREAM_THERMAL, thermalWidget);
+    qCWarning(CustomVideoManagerLog) << "Found widgets - RGB:" << bottomRightWidget << "Thermal:" << topRightWidget;
+
+    _setupReceiver(STREAM_BR, _streamWidgets[STREAM_BR]);
+    _setupReceiver(STREAM_TR, _streamWidgets[STREAM_TR]);
 
     qCWarning(CustomVideoManagerLog) << "Receivers initialized, waiting for VIDEO_STREAM_INFORMATION messages";
 }
@@ -84,31 +87,31 @@ void CustomVideoManager::reinitializeWidgets(bool gridMode)
 
     qCWarning(CustomVideoManagerLog) << "reinitializeWidgets - re-finding video widgets, gridMode:" << gridMode;
 
-    QQuickItem* rgbWidget = nullptr;
-    QQuickItem* thermalWidget = nullptr;
+    QQuickItem* bottomRightWidget = nullptr;
+    QQuickItem* topRightWidget = nullptr;
 
     if (gridMode) {
         // In grid mode, search within the gridView component
         QQuickItem* gridView = _mainWindow->findChild<QQuickItem*>("gridView");
         if (gridView) {
             qCWarning(CustomVideoManagerLog) << "Searching for widgets in gridView";
-            rgbWidget = gridView->findChild<QQuickItem*>("customRgbVideo");
-            thermalWidget = gridView->findChild<QQuickItem*>("customThermalVideo");
+            bottomRightWidget = gridView->findChild<QQuickItem*>("customBottomRightVideo");
+            topRightWidget = gridView->findChild<QQuickItem*>("customTopRightVideo");
         } else {
             qCWarning(CustomVideoManagerLog) << "gridView not found, falling back to global search";
-            rgbWidget = _mainWindow->findChild<QQuickItem*>("customRgbVideo");
-            thermalWidget = _mainWindow->findChild<QQuickItem*>("customThermalVideo");
+            bottomRightWidget = _mainWindow->findChild<QQuickItem*>("customBottomRightVideo");
+            topRightWidget = _mainWindow->findChild<QQuickItem*>("customTopRightVideo");
         }
     } else {
         // In overlay mode, search globally (will find PipView widgets)
-        rgbWidget = _mainWindow->findChild<QQuickItem*>("customRgbVideo");
-        thermalWidget = _mainWindow->findChild<QQuickItem*>("customThermalVideo");
+        bottomRightWidget = _mainWindow->findChild<QQuickItem*>("customBottomRightVideo");
+        topRightWidget = _mainWindow->findChild<QQuickItem*>("customTopRightVideo");
     }
 
-    qCWarning(CustomVideoManagerLog) << "Found widgets - RGB:" << rgbWidget << "Thermal:" << thermalWidget;
+    qCWarning(CustomVideoManagerLog) << "Found widgets - RGB:" << bottomRightWidget << "Thermal:" << topRightWidget;
 
     for (int i = 0; i < STREAM_COUNT; i++) {
-        QQuickItem* newWidget = (i == STREAM_RGB) ? rgbWidget : thermalWidget;
+        QQuickItem* newWidget = _streamWidgets[i];
 
         if (!newWidget) {
             qCWarning(CustomVideoManagerLog) << "Widget not found for stream" << i << "- may be hidden";
@@ -269,8 +272,8 @@ void CustomVideoManager::init(QQuickWindow *mainWindow)
     }
 
     StreamNames = {
-        {STREAM_RGB, "customRgbVideo"},
-        {STREAM_THERMAL, "customThermalVideo"},
+        {STREAM_BR, "customBottomRightVideo"},
+        {STREAM_TR, "customTopRightVideo"},
         {STREAM_DRONE_CAMERA, "customDroneReplayVideo"}
     };
 
@@ -815,9 +818,9 @@ bool CustomVideoManager::enterReplayMode(const VideoStreamMetadata& rgbStream, c
     const std::array<VideoStreamMetadata, REPLAY_STREAM_COUNT> streamMetas = {rgbStream, thermalStream, droneCameraStream};
 
     qCDebug(CustomVideoManagerLog) << "Entering replay mode";
-    qCDebug(CustomVideoManagerLog) << "  RGB:" << streamMetas[STREAM_RGB].videoPath << "offset:" << streamMetas[STREAM_RGB].offsetMs << "ms";
-    qCDebug(CustomVideoManagerLog) << "  Thermal:" << streamMetas[STREAM_THERMAL].videoPath << "offset:" << streamMetas[STREAM_THERMAL].offsetMs << "ms";
-    qCDebug(CustomVideoManagerLog) << "  Drone camera:" << streamMetas[STREAM_DRONE_CAMERA].videoPath << "offset:" << streamMetas[STREAM_DRONE_CAMERA].offsetMs << "ms";
+    // qCDebug(CustomVideoManagerLog) << "  RGB:" << streamMetas[STREAM_RGB].videoPath << "offset:" << streamMetas[STREAM_RGB].offsetMs << "ms";
+    // qCDebug(CustomVideoManagerLog) << "  Thermal:" << streamMetas[STREAM_THERMAL].videoPath << "offset:" << streamMetas[STREAM_THERMAL].offsetMs << "ms";
+    // qCDebug(CustomVideoManagerLog) << "  Drone camera:" << streamMetas[STREAM_DRONE_CAMERA].videoPath << "offset:" << streamMetas[STREAM_DRONE_CAMERA].offsetMs << "ms";
 
     // Stop all live streams - disable auto-restart so they don't fight us
     for (int i = 0; i < STREAM_COUNT; i++) {
@@ -834,6 +837,7 @@ bool CustomVideoManager::enterReplayMode(const VideoStreamMetadata& rgbStream, c
     _replay.playbackSpeed  = 1.0;
 
     for (int i = 0; i < REPLAY_STREAM_COUNT; i++) {
+        qCDebug(CustomVideoManagerLog) << "  " << StreamNames[i].c_str() << ": " << streamMetas[i].videoPath << "offset:" << streamMetas[i].offsetMs << "ms";
         // Skip if no video path provided
         if (streamMetas[i].videoPath.isEmpty()) {
             qCDebug(CustomVideoManagerLog) << "Skipping stream" << i << "- no video path";
@@ -1623,9 +1627,9 @@ QVariantList CustomVideoManager::videoReplaySegments() const {
             // Half-opaque colors (alpha = 0.5) to show overlap
             // RGB: red (255,0,0), Thermal: light blue (0,100,255)
             QColor color;
-            if (i == STREAM_RGB) {
+            if (i == STREAM_BR) {
                 color = QColor::fromRgbF(1.0, 0.0, 0.0, 0.5);
-            } else if (i == STREAM_THERMAL) {
+            } else if (i == STREAM_TR) {
                 color = QColor::fromRgbF(0.0, 0.39, 1.0, 0.5);
             } else {
                 color = QColor::fromRgbF(0.0, 0.75, 0.25, 0.5);

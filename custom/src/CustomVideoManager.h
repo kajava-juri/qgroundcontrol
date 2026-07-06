@@ -89,10 +89,12 @@ public:
     static std::map<int, std::string> StreamNames;
 
     // Stream indices
-    static constexpr int STREAM_RGB = 0;
-    static constexpr int STREAM_THERMAL = 1;
-    static constexpr int STREAM_DRONE_CAMERA = 2;  // Optional third stream for drone camera footage in replay mode
+    static constexpr int STREAM_BR = 0; // bottom right pip
+    static constexpr int STREAM_TR = 1; // top right pip
+    static constexpr int STREAM_DRONE_CAMERA = 2;  // drone camera footage in replay mode
+    // number of sinks managed by this class (not including replay streams)
     static constexpr int STREAM_COUNT = 2;
+    // number of streams managed in replay mode (including drone camera)
     static constexpr int REPLAY_STREAM_COUNT = STREAM_COUNT + 1;
 
     QVariantList videoReplaySegments() const;  // For QML display of replay segments
@@ -196,9 +198,11 @@ private:
 
     // StreamInfo _streams[STREAM_COUNT];
     std::array<StreamInfo, STREAM_COUNT> _streams{{
-        {"RGB"},      // Empty - wait for VIDEO_STREAM_INFORMATION
-        {"Thermal"},   // Empty - wait for VIDEO_STREAM_INFORMATION
+        {"BR"},      // Empty - wait for VIDEO_STREAM_INFORMATION
+        {"TR"},   // Empty - wait for VIDEO_STREAM_INFORMATION
     }};
+    std::map<int, QQuickItem*> _streamWidgets;  // Map stream index to current widget (for replay streams, use same widget as live stream)
+
     QQuickWindow* _mainWindow = nullptr;
     bool _initialized = false;
     bool _initAfterQmlIsReadyDone = false;

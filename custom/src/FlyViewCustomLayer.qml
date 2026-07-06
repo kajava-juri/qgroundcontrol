@@ -119,7 +119,7 @@ Item {
             anchors.fill: parent
             sourceComponent: GstGLQt6VideoItem {
                 id: thermalVideoItem
-                objectName: "customThermalVideo"
+                objectName: "customTopRightVideo"
             }
         }
 
@@ -248,7 +248,7 @@ Item {
             id: rgbComponent
             GstGLQt6VideoItem {
                 id: rgbVideoItem
-                objectName: "customRgbVideo"
+                objectName: "customBottomRightVideo"
             }
         }
         
