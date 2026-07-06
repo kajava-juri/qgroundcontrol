@@ -108,6 +108,10 @@ set(CUSTOM_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/FirmwarePlugin/CustomFirmwarePluginFactory.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Settings/CustomSettings.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Settings/CustomSettings.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Settings/CustomProfileManager.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Settings/CustomProfileManager.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/CustomSwarmController.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/CustomSwarmController.h
     CACHE INTERNAL "" FORCE
 )
 

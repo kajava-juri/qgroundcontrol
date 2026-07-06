@@ -11,6 +11,13 @@ DECLARE_SETTINGGROUP(Custom, "Custom")
     _checkCustomSavePathDirectories();
 }
 
+CustomSettings::CustomSettings(const QString& profileId, QObject* parent)
+    : SettingsGroup(name, QStringLiteral("Custom/Profiles/%1").arg(profileId), parent)
+{
+    _checkCustomSavePathDirectories();
+}
+
+DECLARE_SETTINGSFACT(CustomSettings, profileName)
 DECLARE_SETTINGSFACT(CustomSettings, httpUrl)
 DECLARE_SETTINGSFACT(CustomSettings, folderName)
 DECLARE_SETTINGSFACT(CustomSettings, timeout)

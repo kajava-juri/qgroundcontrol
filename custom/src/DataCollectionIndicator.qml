@@ -22,6 +22,7 @@ Item {
 
     property bool showIndicator: true
     property var    _customSettings: QGroundControl.corePlugin.customSettings
+    property var    _customProfileManager: QGroundControl.corePlugin.customProfileManager
     property var    _customVideoManager: QGroundControl.corePlugin.customVideoManager
     property var    dataController: QGroundControl.corePlugin.dataCollectionController
 
@@ -125,6 +126,75 @@ Item {
         id: expandedPageComponent
 
         SettingsGroupLayout {
+            ComboBox {
+                id: profileComboBox
+                Layout.fillWidth: true
+                model: _customProfileManager ? _customProfileManager.profiles : null
+                delegate: ItemDelegate {
+                    text: object.profileName.value
+                }
+
+                displayText: _customProfileManager && _customProfileManager.activeProfile ? _customProfileManager.activeProfile.profileName.value : qsTr("No Profile")
+                onActivated: (index) => _customProfileManager.setActiveProfile(index)
+            }
+
+            // Rename is just editing the active profile's profileName Fact directly - it persists
+            // immediately and the ComboBox's displayText updates live, no separate save step needed.
+            LabelledFactTextField {
+                Layout.fillWidth: true
+                label: qsTr("Profile Name")
+                fact: _customSettings ? _customSettings.profileName : null
+                visible: fact !== null
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+
+                QGCButton {
+                    text: qsTr("+")
+                    onClicked: newProfileRow.visible = !newProfileRow.visible
+                }
+
+                Item { Layout.fillWidth: true }   // spacer: absorbs all extra space
+
+                QGCButton {
+                    text: qsTr("-")
+                    enabled: _customProfileManager && _customProfileManager.profiles.count > 1
+                    onClicked: {
+                        if (_customProfileManager) {
+                            _customProfileManager.removeProfile(_customProfileManager.activeProfile)
+                        }
+                    }
+                }
+            }
+
+            RowLayout {
+                id: newProfileRow
+                Layout.fillWidth: true
+                visible: false
+
+                QGCTextField {
+                    id: newProfileNameField
+                    Layout.fillWidth: true
+                    placeholderText: qsTr("New profile name")
+                }
+
+                QGCButton {
+                    text: qsTr("Add")
+                    enabled: newProfileNameField.text.length > 0
+                    onClicked: {
+                        const profile = _customProfileManager.createProfile(newProfileNameField.text)
+                        if (profile) {
+                            _customProfileManager.setActiveProfile(profile)
+                            newProfileNameField.text = ""
+                            newProfileRow.visible = false
+                        } else {
+                            console.log("Failed to create profile: " + newProfileNameField.text)
+                        }
+                    }
+                }
+            }
+
             LabelledFactTextField {
                 Layout.fillWidth: true
                 label: qsTr("HTTP URL")

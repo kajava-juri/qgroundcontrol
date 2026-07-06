@@ -13,6 +13,7 @@
 #include <QtQml/QQmlAbstractUrlInterceptor>
 
 #include "CustomSettings.h"
+#include "CustomProfileManager.h"
 #include "QGCCorePlugin.h"
 #include "QGCOptions.h"
 #include "CustomVideoManager.h"
@@ -21,6 +22,7 @@
 class CustomOptions;
 class CustomPlugin;
 class CustomSettings;
+class CustomProfileManager;
 class CustomVideoManager;
 class DataCollectionController;
 class QQmlApplicationEngine;
@@ -69,7 +71,8 @@ private:
 class CustomPlugin : public QGCCorePlugin
 {
     Q_OBJECT
-    Q_PROPERTY(CustomSettings* customSettings READ customSettings CONSTANT)
+    Q_PROPERTY(CustomSettings* customSettings READ customSettings NOTIFY customSettingsChanged)
+    Q_PROPERTY(CustomProfileManager* customProfileManager READ customProfileManager CONSTANT)
     Q_PROPERTY(QVariantList customSettingsPages READ customSettingsPages CONSTANT)
     Q_PROPERTY(CustomVideoManager* customVideoManager READ customVideoManager CONSTANT)
     Q_PROPERTY(DataCollectionController* dataCollectionController READ dataCollectionController CONSTANT)
@@ -95,23 +98,27 @@ public:
     /// Custom toolbar indicators that are always visible (app-level, not vehicle-specific)
     const QVariantList &toolBarIndicators() final;
 
-    CustomSettings *customSettings() const { return _customSettings; }
+    CustomSettings *customSettings() const { return _profileManager ? _profileManager->activeProfile() : nullptr; }
+    CustomProfileManager *customProfileManager() const { return _profileManager; }
     QVariantList customSettingsPages() const { return _customSettingsList; }
     CustomVideoManager *customVideoManager() const { return _customVideoManager; }
     DataCollectionController *dataCollectionController() const { return _dataCollectionController; }
 
+signals:
+    void customSettingsChanged();
+
 private slots:
     void _advancedChanged(bool advanced);
 
-    
+
 private:
     void _addSettingsEntry(const QString& title, const char* qmlFile, const char* iconFile = nullptr);
-    
+
     CustomOptions *_options = nullptr;
     QQmlApplicationEngine *_qmlEngine = nullptr;
     class CustomOverrideInterceptor *_selector = nullptr;
     QVariantList _customSettingsList; // Not to be mixed up with QGCCorePlugin implementation
-    CustomSettings *_customSettings = nullptr;
+    CustomProfileManager *_profileManager = nullptr;
     CustomVideoManager *_customVideoManager = nullptr;
     DataCollectionController *_dataCollectionController = nullptr;
 };

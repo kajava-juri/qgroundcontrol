@@ -311,8 +311,9 @@ QQmlApplicationEngine* CustomPlugin::createQmlApplicationEngine(QObject* parent)
     // TODO: Investigate _qmlEngine->setExtraSelectors({"custom"})
     
     // Initialize custom settings after QGCCorePlugin is fully ready
-    if (!_customSettings) {
-        _customSettings = new CustomSettings(this);
+    if (!_profileManager) {
+        _profileManager = new CustomProfileManager(this);
+        connect(_profileManager, &CustomProfileManager::activeProfileChanged, this, &CustomPlugin::customSettingsChanged);
         _addSettingsEntry(tr("Data Collection"), "qrc:/Custom/qml/CustomSettings.qml");
     }
 

@@ -8,6 +8,9 @@ class CustomSettings : public SettingsGroup
 
 public:
     CustomSettings(QObject* parent = nullptr);
+    /// Constructs a profile-specific instance, backed by its own QSettings subtree
+    /// ("Custom/Profiles/<profileId>") but sharing the same Custom.SettingsGroup.json metadata.
+    CustomSettings(const QString& profileId, QObject* parent = nullptr);
 
 // Fixes the following issue
 // In file included from /home/kajava/work/qgroundcontrol/custom/src/Settings/CustomSettings.h:3,
@@ -17,6 +20,7 @@ public:
 //       |                      ^~~~~~
     DEFINE_SETTING_NAME_GROUP()
 
+    DEFINE_SETTINGFACT(profileName)
     DEFINE_SETTINGFACT(httpUrl)
     DEFINE_SETTINGFACT(folderName)
     DEFINE_SETTINGFACT(timeout)
